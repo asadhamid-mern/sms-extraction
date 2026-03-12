@@ -16,14 +16,6 @@ const SERVER_PARAMS = {
   ContentURL: '',
 };
 
-// ── Mock response used in TEST_MODE ──────────────────────────────────────────
-// Simulates a successful PinRequest. The JS value is a no-op script so the
-// OTP page loads normally. Enter PIN "1234" to complete the flow.
-const MOCK_PIN_REQUEST_RESPONSE: PinRequestResponse = {
-  Status: '0',
-  JS: `console.log('[TEST MODE] Evina JS injected — enter PIN 1234 to verify.');`,
-};
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -36,16 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── TEST MODE ─────────────────────────────────────────────────────────────
-    if (process.env.TEST_MODE === 'true') {
-      console.log(
-        '[PinRequest] TEST MODE — returning mock response for MSISDN:',
-        MSISDN
-      );
-      return NextResponse.json(MOCK_PIN_REQUEST_RESPONSE);
-    }
-
-    // ── LIVE MODE ─────────────────────────────────────────────────────────────
+    // Always call live carrier endpoint in production
     const payload = {
       MSISDN,
       TransactionId,

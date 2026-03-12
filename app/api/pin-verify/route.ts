@@ -4,8 +4,6 @@ import type { PinVerifyResponse } from '@/types';
 const PIN_VERIFY_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinVerify';
 
-const TEST_PIN = '1234';
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -18,17 +16,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── TEST MODE ─────────────────────────────────────────────────────────────
-    if (process.env.TEST_MODE === 'true') {
-      const success = Pin === TEST_PIN;
-      console.log(
-        `[PinVerify] TEST MODE — PIN "${Pin}" is ${success ? '✓ correct' : '✗ wrong (use 1234)'}`
-      );
-      const response: PinVerifyResponse = { Status: success ? '0' : '1' };
-      return NextResponse.json(response);
-    }
-
-    // ── LIVE MODE ─────────────────────────────────────────────────────────────
     console.log('[PinVerify] Verifying for TransactionId:', TransactionId);
 
     const response = await fetch(PIN_VERIFY_URL, {

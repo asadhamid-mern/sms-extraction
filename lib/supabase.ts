@@ -29,15 +29,19 @@ export async function logTransaction(
 ) {
   const client = getClient();
   if (!client) return;
+  try {
+    const { error } = await client
+      .from('subscriptions')
+      .upsert(
+        { ...data, updated_at: new Date().toISOString() },
+        { onConflict: 'transaction_id' }
+      );
 
-  const { error } = await client
-    .from('subscriptions')
-    .upsert(
-      { ...data, updated_at: new Date().toISOString() },
-      { onConflict: 'transaction_id' }
-    );
-
-  if (error) console.error('[Supabase] logTransaction error:', error);
+    if (error) console.error('[Supabase] logTransaction error:', error);
+  } catch (e) {
+    // Never break the user flow if Supabase is unreachable — logging is best-effort only.
+    console.error('[Supabase] logTransaction exception:', e);
+  }
 }
 
 export async function updateTransactionStatus(
@@ -46,11 +50,14 @@ export async function updateTransactionStatus(
 ) {
   const client = getClient();
   if (!client) return;
+  try {
+    const { error } = await client
+      .from('subscriptions')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('transaction_id', transactionId);
 
-  const { error } = await client
-    .from('subscriptions')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('transaction_id', transactionId);
-
-  if (error) console.error('[Supabase] updateTransactionStatus error:', error);
+    if (error) console.error('[Supabase] updateTransactionStatus error:', error);
+  } catch (e) {
+    console.error('[Supabase] updateTransactionStatus exception:', e);
+  }
 }

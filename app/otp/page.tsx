@@ -15,6 +15,8 @@ export default function OTPPage() {
   const [isShaking, setIsShaking] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [maskedMsisdn, setMaskedMsisdn] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
+  const [showDebug, setShowDebug] = useState(false);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([
     null, null, null, null,
@@ -22,11 +24,40 @@ export default function OTPPage() {
   const initialized = useRef(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /**
+   * Read PIN from DOM directly — Evina manipulates the DOM without triggering
+   * React synthetic events, so React state (digits) stays empty after Evina
+   * fills the inputs. Reading from the DOM refs (and optional hidden field)
+   * gives us the real values.
+   */
+  function getPinFromDOM(): string {
+    // Some Evina integrations write the PIN into a hidden #otpValue input
+    const hidden = document.getElementById('otpValue') as
+      | HTMLInputElement
+      | null;
+    if (hidden?.value && hidden.value.replace(/\D/g, '').length === 4) {
+      return hidden.value.replace(/\D/g, '').slice(0, 4);
+    }
+
+    // Fallback: read from the visible 4 OTP boxes
+    return inputRefs.current
+      .map((el) => el?.value ?? '')
+      .join('');
+  }
+
   // ── Verify PIN ────────────────────────────────────────────────────────────
   const handleVerify = useCallback(
     async (pinOverride?: string) => {
-      const pin = pinOverride ?? digits.join('');
-      if (pin.length !== 4) return;
+      // Priority: explicit override → DOM values → React state
+      const pin = pinOverride ?? (getPinFromDOM() || digits.join(''));
+      console.log('[OTP] handleVerify called, pin:', pin, 'source:', pinOverride ? 'override' : 'DOM/state');
+      setDebugInfo((prev) =>
+        `${prev}\n[client] Verifying PIN: "${pin}" (length=${pin.length})`
+      );
+      if (pin.length !== 4) {
+        console.warn('[OTP] PIN length invalid:', pin.length);
+        return;
+      }
 
       const trxId = sessionStorage.getItem('trxId');
       if (!trxId) {
@@ -46,6 +77,11 @@ export default function OTPPage() {
 
         const data = await res.json();
         console.log('[OTP] PinVerify response:', data);
+        setDebugInfo((prev) =>
+          `${prev}\n[api] /api/pin-verify Status="${data.Status}" ${
+            data.error ? `error="${data.error}"` : ''
+          }`
+        );
 
         if (data.Status === '0') {
           await updateTransactionStatus(trxId, 'pin_verified');
@@ -86,9 +122,26 @@ export default function OTPPage() {
 
     // Inject Evina obfuscated JS into <head> — never modify this script
     if (evinaJS) {
-      const script = document.createElement('script');
-      script.text = evinaJS;
-      document.head.appendChild(script);
+      try {
+        const script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.id = 'evina-script';
+        // The API returns raw JS without <script> tags — inject as-is.
+        // Trim avoids accidental leading BOM/whitespace issues.
+        script.text = evinaJS.trim();
+        document.head.appendChild(script);
+        const summary = `[OTP] Evina JS injected length=${evinaJS.length} startsWith="${evinaJS
+          .slice(0, 40)
+          .replace(/\s+/g, ' ')}"`;
+        console.log(summary);
+        setDebugInfo((prev) => `${prev}\n[client] ${summary}`);
+      } catch (e) {
+        console.error('[OTP] Failed to inject Evina JS:', e);
+        setDebugInfo((prev) => `${prev}\n[client] Failed to inject Evina JS: ${String(e)}`);
+      }
+    } else {
+      console.warn('[OTP] No evinaJS found in sessionStorage');
+      setDebugInfo((prev) => `${prev}\n[client] No evinaJS found in sessionStorage`);
     }
 
     // Focus first OTP input
@@ -215,30 +268,31 @@ export default function OTPPage() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === 'true';
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-900 flex items-center justify-center p-4">
-      {/* Test mode banner */}
-      {isTestMode && (
-        <div className="fixed top-0 left-0 right-0 bg-yellow-400 text-yellow-900 text-center text-xs font-bold py-1.5 z-50 tracking-wide">
-          🧪 TEST MODE — Enter PIN <span className="font-black">1234</span> to complete the flow
-        </div>
-      )}
-
       {/*
-        Hidden confirm button — Evina JS will auto-click this when it reads
-        the PIN from the device SMS inbox. The id MUST match ConfirmButtonHTMLId
-        sent in the PinRequest payload.
+        Hidden confirm button — Evina JS auto-clicks this after reading the PIN
+        from the device SMS inbox. id MUST match ConfirmButtonHTMLId in payload.
+        On click we read PIN from DOM directly (not React state) because Evina
+        fills inputs via vanilla JS which bypasses React's onChange events.
       */}
       <button
         id="confirmBtn"
         type="button"
         className="hidden"
-        onClick={() => handleVerify()}
+        onClick={() => {
+          const domPin = getPinFromDOM();
+          console.log('[OTP] confirmBtn clicked by Evina, DOM pin:', domPin);
+          setDebugInfo((prev) =>
+            `${prev}\n[client] confirmBtn clicked, DOM pin="${domPin}"`
+          );
+          handleVerify(domPin || undefined);
+        }}
         aria-hidden="true"
         tabIndex={-1}
       />
+      {/* Hidden input — some Evina versions write the PIN here instead of the visible boxes */}
+      <input id="otpValue" type="hidden" aria-hidden="true" />
 
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm animate-fade-in">
         {/* Header */}
@@ -335,6 +389,24 @@ export default function OTPPage() {
             </button>
           )}
         </p>
+
+        {/* Debug panel for you (not user-facing copy) */}
+        {debugInfo.trim() && (
+          <div className="mt-6 border-t border-gray-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowDebug((v) => !v)}
+              className="w-full text-xs text-gray-400 underline text-center"
+            >
+              {showDebug ? 'Hide technical details' : 'Show technical details'}
+            </button>
+            {showDebug && (
+              <pre className="mt-2 max-h-40 overflow-auto text-[11px] leading-snug text-left bg-gray-50 text-gray-600 rounded-lg p-2 whitespace-pre-wrap break-all">
+                {debugInfo.trim()}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
