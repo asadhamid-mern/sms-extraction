@@ -70,9 +70,19 @@ export default function LandingPage() {
   const initFlow = useCallback(async () => {
     // Parse URL params without useSearchParams to avoid Suspense requirement
     const params = new URLSearchParams(window.location.search);
-    const msisdnParam = params.get('msisdn');
-    const statusParam = params.get('status');
-    const trxidParam = params.get('trxid');
+
+    // Case-insensitive key lookup — carrier may send 'msisdn', 'MSISDN', etc.
+    const getParam = (key: string) =>
+      params.get(key) ??
+      params.get(key.toLowerCase()) ??
+      params.get(key.toUpperCase()) ??
+      null;
+
+    const msisdnParam = getParam('msisdn');
+    const statusParam  = getParam('status');
+    const trxidParam   = getParam('trxid');
+
+    console.log('[Landing] URL params:', { msisdnParam, statusParam, trxidParam });
 
     // Get user IP server-side
     let userIP = '127.0.0.1';
@@ -86,7 +96,10 @@ export default function LandingPage() {
 
     const userAgent = navigator.userAgent;
 
-    if (msisdnParam && statusParam === 'Success') {
+    // Accept any casing of "success" — carrier may send Success / success / SUCCESS
+    const isSuccess = statusParam?.toLowerCase() === 'success';
+
+    if (msisdnParam && isSuccess) {
       // Returning from HE redirect — carrier has given us the MSISDN
       let trxId = sessionStorage.getItem('trxId');
       if (!trxId) trxId = trxidParam || generateTransactionId();
@@ -102,8 +115,23 @@ export default function LandingPage() {
       window.history.replaceState({}, '', '/');
 
       await callPinRequest({ msisdn, trxId, userIP, userAgent });
-    } else if (msisdnParam || statusParam) {
-      // HE returned but without Success — fall back to manual input
+    } else if (msisdnParam && !isSuccess) {
+      // HE returned msisdn but status is not success — still try with the number
+      console.warn('[Landing] HE returned msisdn but status:', statusParam, '— proceeding anyway');
+      let trxId = sessionStorage.getItem('trxId');
+      if (!trxId) trxId = trxidParam || generateTransactionId();
+
+      const msisdn = msisdnParam.startsWith('965')
+        ? msisdnParam
+        : `965${msisdnParam}`;
+
+      sessionStorage.setItem('msisdn', msisdn);
+      sessionStorage.setItem('trxId', trxId);
+      window.history.replaceState({}, '', '/');
+
+      await callPinRequest({ msisdn, trxId, userIP, userAgent });
+    } else if (statusParam && !msisdnParam) {
+      // Status came back but no msisdn — fall back to manual input
       setState('manual_input');
     } else {
       // First visit — generate trxId and log
