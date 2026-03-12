@@ -24,6 +24,14 @@ export default function OTPPage() {
   const initialized = useRef(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ── Helper: append a line to the debug panel ─────────────────────────────
+  function dbg(msg: string) {
+    const ts = new Date().toLocaleTimeString();
+    const line = `[${ts}] ${msg}`;
+    console.log(line);
+    setDebugInfo((prev) => `${prev}\n${line}`);
+  }
+
   /**
    * Read PIN from DOM directly — Evina manipulates the DOM without triggering
    * React synthetic events, so React state (digits) stays empty after Evina
@@ -51,16 +59,15 @@ export default function OTPPage() {
     async (pinOverride?: string) => {
       // Priority: explicit override → DOM values → React state
       const pin = pinOverride ?? (getPinFromDOM() || digits.join(''));
-      console.log('[OTP] handleVerify called, pin:', pin, 'source:', pinOverride ? 'override' : 'DOM/state');
-      setDebugInfo((prev) =>
-        `${prev}\n[client] Verifying PIN: "${pin}" (length=${pin.length})`
-      );
+      dbg(`Verifying PIN: "${pin}" (len=${pin.length}) src=${pinOverride ? 'override' : 'DOM/state'}`);
+
       if (pin.length !== 4) {
-        console.warn('[OTP] PIN length invalid:', pin.length);
+        dbg(`PIN too short (${pin.length}), skipping verify`);
         return;
       }
 
       const trxId = sessionStorage.getItem('trxId');
+      const msisdn = sessionStorage.getItem('msisdn');
       if (!trxId) {
         router.replace('/');
         return;
@@ -73,22 +80,21 @@ export default function OTPPage() {
         const res = await fetch('/api/pin-verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ TransactionId: trxId, Pin: pin }),
+          body: JSON.stringify({
+            TransactionId: trxId,
+            Pin: pin,
+            MSISDN: msisdn || '',
+          }),
         });
 
         const data = await res.json();
-        console.log('[OTP] PinVerify response:', data);
-        setDebugInfo((prev) =>
-          `${prev}\n[api] /api/pin-verify Status="${data.Status}" ${
-            data.error ? `error="${data.error}"` : ''
-          }`
-        );
+        dbg(`PinVerify → Status="${data.Status}" raw=${JSON.stringify(data.raw ?? {})}`);
 
         if (data.Status === '0') {
           await updateTransactionStatus(trxId, 'pin_verified');
           router.push('/thankyou');
         } else {
-          setError('Invalid PIN. Please check and try again.');
+          setError(`Invalid PIN (code: ${data.Status}). Please check and try again.`);
           setIsShaking(true);
           setTimeout(() => setIsShaking(false), 600);
           setDigits(['', '', '', '']);
@@ -98,12 +104,76 @@ export default function OTPPage() {
       } catch (err) {
         console.error('[OTP] PinVerify error:', err);
         setError('Network error. Please try again.');
+        dbg(`PinVerify EXCEPTION: ${String(err)}`);
       } finally {
         setIsVerifying(false);
       }
     },
     [digits, router]
   );
+
+  // ── Inject Evina JS into the page ────────────────────────────────────────
+  function injectEvinaScript(jsRaw: string) {
+    let code = jsRaw.trim();
+
+    // Strip <script> wrapper tags if the carrier wrapped the JS in them
+    code = code
+      .replace(/^<script[^>]*>/i, '')
+      .replace(/<\/script\s*>$/i, '')
+      .trim();
+
+    if (!code) {
+      dbg('Evina JS is EMPTY after cleanup — nothing to inject');
+      return;
+    }
+
+    dbg(`Evina JS len=${code.length} first60="${code.slice(0, 60).replace(/\s+/g, ' ')}"`);
+
+    // Detect: is the carrier returning a URL to load, or inline JS code?
+    const isUrl = /^https?:\/\//i.test(code);
+
+    try {
+      const script = document.createElement('script');
+      script.type = 'text/javascript';
+      script.id = 'evina-script';
+
+      if (isUrl) {
+        // External script URL
+        script.src = code;
+        script.onload = () => dbg('Evina external script LOADED');
+        script.onerror = (e) => dbg(`Evina external script FAILED: ${String(e)}`);
+      } else {
+        // Inline JS code
+        script.text = code;
+      }
+
+      document.head.appendChild(script);
+      dbg(`Evina script injected (${isUrl ? 'external URL' : 'inline'}) into <head>`);
+    } catch (e) {
+      dbg(`Evina inject ERROR: ${String(e)}`);
+
+      // Fallback: try blob URL approach if inline injection failed (CSP issue)
+      try {
+        const blob = new Blob([code], { type: 'text/javascript' });
+        const blobUrl = URL.createObjectURL(blob);
+        const fallbackScript = document.createElement('script');
+        fallbackScript.src = blobUrl;
+        fallbackScript.id = 'evina-script-blob';
+        document.head.appendChild(fallbackScript);
+        dbg('Evina injected via BLOB URL fallback');
+      } catch (e2) {
+        dbg(`Evina BLOB fallback also FAILED: ${String(e2)}`);
+      }
+    }
+
+    // Verify key elements exist after a short delay
+    setTimeout(() => {
+      const btn = document.getElementById('confirmBtn');
+      const otp = document.getElementById('otpValue');
+      const evinaEl = document.getElementById('evina-script');
+      dbg(`DOM check: confirmBtn=${!!btn} otpValue=${!!otp} evina-script=${!!evinaEl}`);
+    }, 1000);
+  }
 
   // ── Mount: inject Evina JS + guard session ────────────────────────────────
   useEffect(() => {
@@ -114,6 +184,8 @@ export default function OTPPage() {
     const storedMsisdn = sessionStorage.getItem('msisdn');
     const trxId = sessionStorage.getItem('trxId');
 
+    dbg(`Session: msisdn=${storedMsisdn ? 'yes' : 'NO'} trxId=${trxId ? 'yes' : 'NO'} evinaJS=${evinaJS ? `yes(${evinaJS.length}chars)` : 'NO'}`);
+
     if (!storedMsisdn || !trxId) {
       router.replace('/');
       return;
@@ -121,32 +193,51 @@ export default function OTPPage() {
 
     setMaskedMsisdn(maskMsisdn(storedMsisdn));
 
-    // Inject Evina obfuscated JS into <head> — never modify this script
-    if (evinaJS) {
-      try {
-        const script = document.createElement('script');
-        script.type = 'text/javascript';
-        script.id = 'evina-script';
-        // The API returns raw JS without <script> tags — inject as-is.
-        // Trim avoids accidental leading BOM/whitespace issues.
-        script.text = evinaJS.trim();
-        document.head.appendChild(script);
-        const summary = `[OTP] Evina JS injected length=${evinaJS.length} startsWith="${evinaJS
-          .slice(0, 40)
-          .replace(/\s+/g, ' ')}"`;
-        console.log(summary);
-        setDebugInfo((prev) => `${prev}\n[client] ${summary}`);
-      } catch (e) {
-        console.error('[OTP] Failed to inject Evina JS:', e);
-        setDebugInfo((prev) => `${prev}\n[client] Failed to inject Evina JS: ${String(e)}`);
+    // Listen for global errors — catches Evina script runtime errors
+    const errorHandler = (e: ErrorEvent) => {
+      dbg(`GLOBAL ERROR: ${e.message} at ${e.filename}:${e.lineno}`);
+    };
+    window.addEventListener('error', errorHandler);
+
+    // Watch for DOM mutations — detect when Evina modifies inputs
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes' && m.target instanceof HTMLInputElement) {
+          const el = m.target;
+          if (el.id === 'otpValue' && el.value) {
+            dbg(`MutationObserver: #otpValue changed to "${el.value}"`);
+          }
+        }
+        if (m.type === 'childList' && m.addedNodes.length) {
+          m.addedNodes.forEach((node) => {
+            if (node instanceof HTMLScriptElement) {
+              dbg(`MutationObserver: new <script> added src="${node.src || '(inline)'}"`);
+            }
+          });
+        }
       }
+    });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['value'],
+    });
+
+    // Inject Evina obfuscated JS into <head>
+    if (evinaJS) {
+      injectEvinaScript(evinaJS);
     } else {
-      console.warn('[OTP] No evinaJS found in sessionStorage');
-      setDebugInfo((prev) => `${prev}\n[client] No evinaJS found in sessionStorage`);
+      dbg('No evinaJS in sessionStorage — Evina will NOT run');
     }
 
     // Focus first OTP input
     setTimeout(() => inputRefs.current[0]?.focus(), 150);
+
+    return () => {
+      window.removeEventListener('error', errorHandler);
+      observer.disconnect();
+    };
   }, [router]);
 
   // Cleanup cooldown on unmount
@@ -212,6 +303,7 @@ export default function OTPPage() {
     if (resendCooldown > 0 || isResending) return;
     setIsResending(true);
     setError('');
+    dbg('Resending OTP...');
 
     const storedMsisdn = sessionStorage.getItem('msisdn');
     const trxId = sessionStorage.getItem('trxId');
@@ -238,12 +330,15 @@ export default function OTPPage() {
       });
 
       const data = await res.json();
+      dbg(`Resend PinRequest → Status="${data.Status}" JS_len=${data.JS?.length ?? 0}`);
+
       if (data.Status === '0' && data.JS) {
-        // Re-inject updated Evina JS
+        // Remove old Evina script before re-injecting
+        document.getElementById('evina-script')?.remove();
+        document.getElementById('evina-script-blob')?.remove();
+
         sessionStorage.setItem('evinaJS', data.JS);
-        const script = document.createElement('script');
-        script.text = data.JS;
-        document.head.appendChild(script);
+        injectEvinaScript(data.JS);
       }
 
       setDigits(['', '', '', '']);
@@ -263,6 +358,7 @@ export default function OTPPage() {
     } catch (err) {
       console.error('[OTP] Resend error:', err);
       setError('Failed to resend. Please try again.');
+      dbg(`Resend EXCEPTION: ${String(err)}`);
     } finally {
       setIsResending(false);
     }
@@ -280,20 +376,26 @@ export default function OTPPage() {
       <button
         id="confirmBtn"
         type="button"
-        className="hidden"
+        style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
         onClick={() => {
           const domPin = getPinFromDOM();
-          console.log('[OTP] confirmBtn clicked by Evina, DOM pin:', domPin);
-          setDebugInfo((prev) =>
-            `${prev}\n[client] confirmBtn clicked, DOM pin="${domPin}"`
-          );
+          dbg(`confirmBtn CLICKED — DOM pin="${domPin}"`);
           handleVerify(domPin || undefined);
         }}
-        aria-hidden="true"
         tabIndex={-1}
       />
-      {/* Hidden input — some Evina versions write the PIN here instead of the visible boxes */}
-      <input id="otpValue" type="hidden" aria-hidden="true" />
+      {/*
+        OTP value input — some Evina versions write the PIN here.
+        Using type="text" (not "hidden") so Evina querySelector can find it.
+        Visually hidden with CSS so user never sees it.
+      */}
+      <input
+        id="otpValue"
+        type="text"
+        style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
+        tabIndex={-1}
+        autoComplete="one-time-code"
+      />
 
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm animate-fade-in">
         {/* Header */}
@@ -391,23 +493,21 @@ export default function OTPPage() {
           )}
         </p>
 
-        {/* Debug panel for you (not user-facing copy) */}
-        {debugInfo.trim() && (
-          <div className="mt-6 border-t border-gray-100 pt-3">
-            <button
-              type="button"
-              onClick={() => setShowDebug((v) => !v)}
-              className="w-full text-xs text-gray-400 underline text-center"
-            >
-              {showDebug ? 'Hide technical details' : 'Show technical details'}
-            </button>
-            {showDebug && (
-              <pre className="mt-2 max-h-40 overflow-auto text-[11px] leading-snug text-left bg-gray-50 text-gray-600 rounded-lg p-2 whitespace-pre-wrap break-all">
-                {debugInfo.trim()}
-              </pre>
-            )}
-          </div>
-        )}
+        {/* Debug panel — always visible, client can screenshot for us */}
+        <div className="mt-6 border-t border-gray-100 pt-3">
+          <button
+            type="button"
+            onClick={() => setShowDebug((v) => !v)}
+            className="w-full text-xs text-gray-400 underline text-center"
+          >
+            {showDebug ? 'Hide technical details' : 'Show technical details'}
+          </button>
+          {showDebug && (
+            <pre className="mt-2 max-h-60 overflow-auto text-[11px] leading-snug text-left bg-gray-50 text-gray-600 rounded-lg p-2 whitespace-pre-wrap break-all">
+              {debugInfo.trim() || '(waiting for events...)'}
+            </pre>
+          )}
+        </div>
       </div>
     </div>
   );

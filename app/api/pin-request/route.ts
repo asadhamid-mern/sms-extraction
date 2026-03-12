@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { PinRequestResponse } from '@/types';
 
 const PIN_REQUEST_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinRequest';
@@ -63,13 +62,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Normalize: carrier may return "Status" or "status" — always expose as "Status"
-    const normalized: PinRequestResponse = {
+    const normalized = {
       Status: String(raw.Status ?? raw.status ?? raw.STATUS ?? ''),
       JS:     String(raw.JS     ?? raw.js     ?? raw.Javascript ?? ''),
+      // Return full raw so client debug panel can show everything
+      raw,
     };
 
     console.log('[PinRequest] Raw response keys:', Object.keys(raw));
     console.log('[PinRequest] Normalized Status:', normalized.Status);
+    console.log('[PinRequest] JS length:', normalized.JS.length);
     return NextResponse.json(normalized);
   } catch (err) {
     console.error('[PinRequest] Unexpected error:', err);

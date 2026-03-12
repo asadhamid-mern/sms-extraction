@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { PinVerifyResponse } from '@/types';
 
 const PIN_VERIFY_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinVerify';
@@ -7,7 +6,7 @@ const PIN_VERIFY_URL =
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { TransactionId, Pin } = body;
+    const { TransactionId, Pin, MSISDN } = body;
 
     if (!TransactionId || !Pin) {
       return NextResponse.json(
@@ -16,12 +15,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[PinVerify] Verifying for TransactionId:', TransactionId);
+    // Build payload — include MSISDN if provided (some carriers require it)
+    const payload: Record<string, string> = { TransactionId, Pin };
+    if (MSISDN) payload.MSISDN = MSISDN;
+
+    console.log('[PinVerify] Sending payload:', payload);
 
     const response = await fetch(PIN_VERIFY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ TransactionId, Pin }),
+      body: JSON.stringify(payload),
     });
 
     const text = await response.text();
@@ -39,8 +42,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Normalize: carrier may return "Status" or "status"
-    const normalized: PinVerifyResponse = {
+    const normalized = {
       Status: String(raw.Status ?? raw.status ?? raw.STATUS ?? ''),
+      // Return full raw so client debug panel can show everything
+      raw,
     };
 
     console.log('[PinVerify] Raw response keys:', Object.keys(raw));
