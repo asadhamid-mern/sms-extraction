@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Allow Evina's obfuscated JS to execute as inline script.
-  // Without this, Vercel's default CSP may silently block it.
+  // Allow Evina's obfuscated JS to execute and phone home.
   async headers() {
     return [
       {
@@ -14,7 +13,8 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https: http:",
               "style-src 'self' 'unsafe-inline'",
-              "connect-src 'self' https: http:",
+              // Evina needs to reach notify.dcbprotect.com + WebSocket ws.dcbprotect.com
+              "connect-src 'self' https: http: wss://ws.dcbprotect.com:8080 wss:",
               "img-src 'self' data: https: http:",
               "font-src 'self' data:",
               "frame-src 'self' https: http:",

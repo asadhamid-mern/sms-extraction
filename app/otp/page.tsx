@@ -166,13 +166,24 @@ export default function OTPPage() {
       }
     }
 
-    // Verify key elements exist after a short delay
+    // CRITICAL for Next.js (SPA): Evina's script starts on DOMContentLoaded,
+    // but that event already fired on initial page load. Client-side navigation
+    // to /otp does NOT re-fire DOMContentLoaded. Dispatch DCBProtectRun to
+    // tell the Evina script to initialize now.
     setTimeout(() => {
+      try {
+        document.dispatchEvent(new Event('DCBProtectRun'));
+        dbg('Dispatched DCBProtectRun event (SPA re-init)');
+      } catch (e) {
+        dbg(`DCBProtectRun dispatch error: ${String(e)}`);
+      }
+
+      // Verify key elements exist
       const btn = document.getElementById('confirmBtn');
       const otp = document.getElementById('otpValue');
       const evinaEl = document.getElementById('evina-script');
       dbg(`DOM check: confirmBtn=${!!btn} otpValue=${!!otp} evina-script=${!!evinaEl}`);
-    }, 1000);
+    }, 500);
   }
 
   // ── Mount: inject Evina JS + guard session ────────────────────────────────
