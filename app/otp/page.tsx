@@ -31,6 +31,7 @@ export default function OTPPage() {
    * gives us the real values.
    */
   function getPinFromDOM(): string {
+    if (typeof document === 'undefined') return '';
     // Some Evina integrations write the PIN into a hidden #otpValue input
     const hidden = document.getElementById('otpValue') as
       | HTMLInputElement
@@ -359,7 +360,7 @@ export default function OTPPage() {
         {/* Verify button */}
         <button
           onClick={() => handleVerify()}
-          disabled={isVerifying || digits.join('').length !== 4}
+          disabled={isVerifying || (digits.join('').length !== 4 && getPinFromDOM().length !== 4)}
           className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-xl transition-colors min-h-[48px] flex items-center justify-center gap-2"
         >
           {isVerifying ? (
