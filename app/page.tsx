@@ -15,6 +15,8 @@ export default function LandingPage() {
   const [state, setState] = useState<PageState>('loading');
   const [manualNumber, setManualNumber] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
+  const [showDebug, setShowDebug] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const initialized = useRef(false);
 
@@ -47,6 +49,10 @@ export default function LandingPage() {
         const data = await res.json();
         console.log('[Landing] PinRequest response:', data);
 
+        const debug = `Status="${data.Status}" JS_len=${data.JS?.length ?? 0} MSISDN=${msisdn} TrxId=${trxId}`;
+        setDebugInfo(debug);
+        console.log('[Landing] Debug:', debug);
+
         if (data.Status === '0') {
           sessionStorage.setItem('evinaJS', data.JS || '');
           sessionStorage.setItem('msisdn', msisdn);
@@ -55,12 +61,14 @@ export default function LandingPage() {
           router.push('/otp');
         } else {
           await updateTransactionStatus(trxId, 'failed');
-          setErrorMsg(`Subscription failed (code: ${data.Status}). Please try again.`);
+          setErrorMsg(`Subscription failed (code: ${data.Status || 'unknown'}). Please try again.`);
+          setDebugInfo(`API Status: "${data.Status}" | Raw keys: ${Object.keys(data).join(', ')}`);
           setState('error');
         }
       } catch (err) {
         console.error('[Landing] PinRequest error:', err);
         setErrorMsg('Network error. Please check your connection and try again.');
+        setDebugInfo(`Exception: ${String(err)}`);
         setState('error');
       }
     },
@@ -259,6 +267,23 @@ export default function LandingPage() {
           >
             Enter number manually
           </button>
+
+          {/* Debug panel — tap 5× on error icon to reveal */}
+          {debugInfo && (
+            <div className="mt-4">
+              <button
+                onClick={() => setShowDebug(v => !v)}
+                className="text-xs text-gray-300 underline w-full text-center"
+              >
+                {showDebug ? 'Hide' : 'Show'} debug info
+              </button>
+              {showDebug && (
+                <pre className="mt-2 text-xs text-left bg-gray-100 text-gray-700 rounded-lg p-3 break-all whitespace-pre-wrap">
+                  {debugInfo}
+                </pre>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );

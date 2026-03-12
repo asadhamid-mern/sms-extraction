@@ -40,9 +40,9 @@ export async function POST(request: NextRequest) {
     const text = await response.text();
     console.log('[PinVerify] Raw response:', text);
 
-    let data: PinVerifyResponse;
+    let raw: Record<string, unknown>;
     try {
-      data = JSON.parse(text);
+      raw = JSON.parse(text);
     } catch {
       console.error('[PinVerify] Failed to parse response JSON:', text);
       return NextResponse.json(
@@ -51,8 +51,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[PinVerify] Parsed response Status:', data.Status);
-    return NextResponse.json(data);
+    // Normalize: carrier may return "Status" or "status"
+    const normalized: PinVerifyResponse = {
+      Status: String(raw.Status ?? raw.status ?? raw.STATUS ?? ''),
+    };
+
+    console.log('[PinVerify] Raw response keys:', Object.keys(raw));
+    console.log('[PinVerify] Normalized Status:', normalized.Status);
+    return NextResponse.json(normalized);
   } catch (err) {
     console.error('[PinVerify] Unexpected error:', err);
     return NextResponse.json(

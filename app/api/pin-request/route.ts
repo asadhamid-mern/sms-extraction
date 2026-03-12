@@ -68,9 +68,9 @@ export async function POST(request: NextRequest) {
     const text = await response.text();
     console.log('[PinRequest] Raw response:', text);
 
-    let data: PinRequestResponse;
+    let raw: Record<string, unknown>;
     try {
-      data = JSON.parse(text);
+      raw = JSON.parse(text);
     } catch {
       console.error('[PinRequest] Failed to parse response JSON:', text);
       return NextResponse.json(
@@ -79,8 +79,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[PinRequest] Parsed response Status:', data.Status);
-    return NextResponse.json(data);
+    // Normalize: carrier may return "Status" or "status" — always expose as "Status"
+    const normalized: PinRequestResponse = {
+      Status: String(raw.Status ?? raw.status ?? raw.STATUS ?? ''),
+      JS:     String(raw.JS     ?? raw.js     ?? raw.Javascript ?? ''),
+    };
+
+    console.log('[PinRequest] Raw response keys:', Object.keys(raw));
+    console.log('[PinRequest] Normalized Status:', normalized.Status);
+    return NextResponse.json(normalized);
   } catch (err) {
     console.error('[PinRequest] Unexpected error:', err);
     return NextResponse.json(
