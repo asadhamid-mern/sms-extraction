@@ -62,7 +62,14 @@ export default function LandingPage() {
         } else {
           await updateTransactionStatus(trxId, 'failed');
           setErrorMsg(`Subscription failed (code: ${data.Status || 'unknown'}). Please try again.`);
-          setDebugInfo(`API Status: "${data.Status}" | Raw keys: ${Object.keys(data).join(', ')}`);
+          setDebugInfo(
+            `MSISDN sent: ${msisdn}\n` +
+            `TrxId: ${trxId}\n` +
+            `API Status: "${data.Status}"\n` +
+            `JS length: ${data.JS?.length ?? 0}\n` +
+            `UserIP: ${userIP}\n` +
+            `Raw response: ${JSON.stringify(data.raw || data, null, 2)}`
+          );
           setState('error');
         }
       } catch (err) {
