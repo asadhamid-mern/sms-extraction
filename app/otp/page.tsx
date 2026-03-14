@@ -270,9 +270,12 @@ export default function OTPPage() {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-submit when all 4 digits are entered
+    // Auto-submit when all 4 digits are entered — click confirmBtn
+    // so Evina captures the interaction (avoids error 2802)
     if (digit && newDigits.every((d) => d !== '')) {
-      handleVerify(newDigits.join(''));
+      setTimeout(() => {
+        document.getElementById('confirmBtn')?.click();
+      }, 50);
     }
   }
 
@@ -303,7 +306,9 @@ export default function OTPPage() {
     setError('');
 
     if (pasted.length === 4) {
-      handleVerify(pasted);
+      setTimeout(() => {
+        document.getElementById('confirmBtn')?.click();
+      }, 50);
     } else {
       inputRefs.current[Math.min(pasted.length, 3)]?.focus();
     }
@@ -379,22 +384,11 @@ export default function OTPPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-900 flex items-center justify-center p-4">
       {/*
-        Hidden confirm button — Evina JS auto-clicks this after reading the PIN
-        from the device SMS inbox. id MUST match ConfirmButtonHTMLId in payload.
-        On click we read PIN from DOM directly (not React state) because Evina
-        fills inputs via vanilla JS which bypasses React's onChange events.
+        NOTE: The old hidden confirmBtn was removed. The visible "Verify OTP"
+        button below now carries id="confirmBtn" so that Evina monitors the
+        actual button the user interacts with. Evina error 2802 = "click data
+        transmission failure" happens when the user clicks an unmonitored button.
       */}
-      <button
-        id="confirmBtn"
-        type="button"
-        style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
-        onClick={() => {
-          const domPin = getPinFromDOM();
-          dbg(`confirmBtn CLICKED — DOM pin="${domPin}"`);
-          handleVerify(domPin || undefined);
-        }}
-        tabIndex={-1}
-      />
       {/*
         OTP value input — some Evina versions write the PIN here.
         Using type="text" (not "hidden") so Evina querySelector can find it.
@@ -470,9 +464,25 @@ export default function OTPPage() {
           )}
         </div>
 
-        {/* Verify button */}
+        {/* Verify button — id="confirmBtn" so Evina monitors this click.
+            Evina error 2802 occurs when the user clicks an unmonitored element.
+            We also call evina_notify() if available (Evina's SPA click hook). */}
         <button
-          onClick={() => handleVerify()}
+          id="confirmBtn"
+          onClick={(e) => {
+            // Let Evina capture this click event before we process
+            if (typeof (window as unknown as Record<string, unknown>).evina_notify === 'function') {
+              (window as unknown as { evina_notify: (e: React.MouseEvent, cb: () => void) => void }).evina_notify(e, () => {
+                const pin = getPinFromDOM() || digits.join('');
+                dbg(`confirmBtn clicked (via evina_notify) — pin="${pin}"`);
+                handleVerify(pin || undefined);
+              });
+            } else {
+              const pin = getPinFromDOM() || digits.join('');
+              dbg(`confirmBtn clicked (direct) — pin="${pin}"`);
+              handleVerify(pin || undefined);
+            }
+          }}
           disabled={isVerifying || (digits.join('').length !== 4 && getPinFromDOM().length !== 4)}
           className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-xl transition-colors min-h-[48px] flex items-center justify-center gap-2"
         >
