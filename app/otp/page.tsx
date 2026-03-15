@@ -251,6 +251,51 @@ export default function OTPPage() {
     };
   }, [router]);
 
+  // ── Web OTP API — auto-read SMS if carrier formats it correctly ───────────
+  // For this to work the carrier's OTP SMS must end with the line:
+  //   @sms-extraction.vercel.app #XXXX
+  // Without that format the browser won't surface the code via this API.
+  // iOS autofill uses autocomplete="one-time-code" on the input instead.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!('OTPCredential' in window)) {
+      dbg('Web OTP API: not supported on this browser');
+      return;
+    }
+
+    dbg('Web OTP API: listening for SMS...');
+    const ac = new AbortController();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (navigator.credentials as any)
+      .get({ otp: { transport: ['sms'] }, signal: ac.signal })
+      .then((otp: { code: string }) => {
+        const code = otp.code.replace(/\D/g, '').slice(0, 4);
+        dbg(`Web OTP received: "${code}"`);
+        if (code.length === 4) {
+          const split = code.split('');
+          setDigits(split);
+          // Update DOM refs directly so getPinFromDOM() finds the value
+          split.forEach((d, i) => {
+            if (inputRefs.current[i]) inputRefs.current[i]!.value = d;
+          });
+          // Click confirmBtn so Evina captures the interaction
+          setTimeout(() => {
+            dbg('Web OTP: clicking confirmBtn');
+            document.getElementById('confirmBtn')?.click();
+          }, 100);
+        }
+      })
+      .catch((err: Error) => {
+        if (err.name !== 'AbortError') {
+          dbg(`Web OTP error: ${err.message}`);
+        }
+      });
+
+    return () => ac.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Cleanup cooldown on unmount
   useEffect(() => {
     return () => {
@@ -443,6 +488,9 @@ export default function OTPPage() {
               inputMode="numeric"
               maxLength={1}
               value={digit}
+              // autocomplete="one-time-code" on first box triggers iOS "From Messages"
+              // autofill suggestion and Android Chrome passive OTP detection
+              autoComplete={i === 0 ? 'one-time-code' : 'off'}
               onChange={(e) => handleDigitChange(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={handlePaste}
