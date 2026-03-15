@@ -465,23 +465,15 @@ export default function OTPPage() {
         </div>
 
         {/* Verify button — id="confirmBtn" so Evina monitors this click.
-            Evina error 2802 occurs when the user clicks an unmonitored element.
-            We also call evina_notify() if available (Evina's SPA click hook). */}
+            Evina attaches its own listener to #confirmBtn to capture click data.
+            Our onClick fires alongside Evina's listener (no evina_notify needed
+            since te is set to "confirmBtn", not "evina_notify"). */}
         <button
           id="confirmBtn"
-          onClick={(e) => {
-            // Let Evina capture this click event before we process
-            if (typeof (window as unknown as Record<string, unknown>).evina_notify === 'function') {
-              (window as unknown as { evina_notify: (e: React.MouseEvent, cb: () => void) => void }).evina_notify(e, () => {
-                const pin = getPinFromDOM() || digits.join('');
-                dbg(`confirmBtn clicked (via evina_notify) — pin="${pin}"`);
-                handleVerify(pin || undefined);
-              });
-            } else {
-              const pin = getPinFromDOM() || digits.join('');
-              dbg(`confirmBtn clicked (direct) — pin="${pin}"`);
-              handleVerify(pin || undefined);
-            }
+          onClick={() => {
+            const pin = getPinFromDOM() || digits.join('');
+            dbg(`confirmBtn clicked — pin="${pin}"`);
+            handleVerify(pin || undefined);
           }}
           disabled={isVerifying || (digits.join('').length !== 4 && getPinFromDOM().length !== 4)}
           className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 rounded-xl transition-colors min-h-[48px] flex items-center justify-center gap-2"
