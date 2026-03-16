@@ -90,7 +90,9 @@ export default function OTPPage() {
         const data = await res.json();
         dbg(`PinVerify → Status="${data.Status}" raw=${JSON.stringify(data.raw ?? {})}`);
 
-        if (data.Status === '0') {
+        // "0" = success, "103" = already subscribed (also treated as success,
+        // per carrier reference implementation)
+        if (data.Status === '0' || data.Status === '103') {
           await updateTransactionStatus(trxId, 'pin_verified');
           router.push('/thankyou');
         } else {
@@ -428,23 +430,30 @@ export default function OTPPage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-900 flex items-center justify-center p-4">
-      {/*
-        NOTE: The old hidden confirmBtn was removed. The visible "Verify OTP"
-        button below now carries id="confirmBtn" so that Evina monitors the
-        actual button the user interacts with. Evina error 2802 = "click data
-        transmission failure" happens when the user clicks an unmonitored button.
-      */}
-      {/*
-        OTP value input — some Evina versions write the PIN here.
-        Using type="text" (not "hidden") so Evina querySelector can find it.
-        Visually hidden with CSS so user never sees it.
-      */}
+      {/* EvinaTrapLink — required hidden anchor that Evina's script needs to detect
+          the subscription action. Copied from carrier's reference implementation. */}
+      <a href="#" id="EvinaTrapLink" style={{ display: 'none' }}>
+        CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j&apos;en profite
+        - Télécharger - CONTINUER - ENTRER - S&apos;ABONNER - اشترك الآن - VOIR
+        - ACCEPT - اشترك الان - الاشتراك
+      </a>
+
+      {/* OTP value input — some Evina versions write the PIN here. */}
       <input
         id="otpValue"
         type="text"
         style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
         tabIndex={-1}
         autoComplete="one-time-code"
+      />
+
+      {/* EvinaTestCanvas — required hidden canvas that Evina's script uses internally.
+          Copied from carrier's reference implementation. */}
+      <canvas
+        id="EvinaTestCanvas"
+        width={500}
+        height={50}
+        style={{ display: 'none' }}
       />
 
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm animate-fade-in">
