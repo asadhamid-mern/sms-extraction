@@ -258,6 +258,40 @@ export default function OTPPage() {
   // detects the OTP interception call and flags the entire session as
   // automated/malware, blocking even manual PIN entry. Evina's own script
   // handles OTP auto-read internally — we must not interfere with it.
+  //
+  // Instead we use autocomplete="one-time-code" on the first input — this is
+  // a passive HTML hint that triggers the browser's native SMS suggestion bar
+  // (Android) / keyboard autofill (iOS). No JS API call = safe for Evina.
+
+  // ── Native autofill listener (safety net) ─────────────────────────────────
+  // Some browsers fire native `input` events for autofill that bypass React's
+  // synthetic onChange. This catches those and distributes digits.
+  useEffect(() => {
+    const el = inputRefs.current[0];
+    if (!el) return;
+
+    const handler = () => {
+      const val = el.value.replace(/\D/g, '');
+      if (val.length > 1) {
+        const code = val.slice(0, 4);
+        const newDigits = ['', '', '', ''];
+        for (let i = 0; i < code.length; i++) newDigits[i] = code[i];
+        setDigits(newDigits);
+
+        const otpEl = document.getElementById('otpValue') as HTMLInputElement | null;
+        if (otpEl) otpEl.value = code;
+
+        dbg(`Native autofill captured: "${code}"`);
+
+        if (code.length === 4) {
+          setTimeout(() => document.getElementById('confirmBtn')?.click(), 100);
+        }
+      }
+    };
+
+    el.addEventListener('input', handler);
+    return () => el.removeEventListener('input', handler);
+  }, []);
 
   // Cleanup cooldown on unmount
   useEffect(() => {
@@ -268,7 +302,32 @@ export default function OTPPage() {
 
   // ── OTP input handlers ────────────────────────────────────────────────────
   function handleDigitChange(index: number, value: string) {
-    const digit = value.replace(/\D/g, '').slice(-1);
+    const cleaned = value.replace(/\D/g, '');
+
+    // Multi-digit value = browser autofill from SMS keyboard suggestion.
+    // Distribute across all 4 boxes and auto-submit.
+    if (cleaned.length > 1) {
+      const code = cleaned.slice(0, 4);
+      const newDigits = ['', '', '', ''];
+      for (let i = 0; i < code.length; i++) newDigits[i] = code[i];
+      setDigits(newDigits);
+      setError('');
+
+      // Also write to #otpValue so getPinFromDOM() picks it up
+      const otpEl = document.getElementById('otpValue') as HTMLInputElement | null;
+      if (otpEl) otpEl.value = code;
+
+      dbg(`Autofill detected: "${code}" (${code.length} digits)`);
+
+      if (code.length === 4) {
+        setTimeout(() => document.getElementById('confirmBtn')?.click(), 100);
+      } else {
+        inputRefs.current[Math.min(code.length, 3)]?.focus();
+      }
+      return;
+    }
+
+    const digit = cleaned.slice(-1);
     const newDigits = [...digits];
     newDigits[index] = digit;
     setDigits(newDigits);
@@ -456,11 +515,12 @@ export default function OTPPage() {
               }}
               type="tel"
               inputMode="numeric"
-              maxLength={1}
+              // First input: no maxLength so browser autofill can set full OTP code.
+              // autocomplete="one-time-code" triggers passive SMS suggestion in keyboard
+              // (NOT the Web OTP JS API — this is just an HTML hint, safe for Evina).
+              maxLength={i === 0 ? 4 : 1}
               value={digit}
-              // autocomplete="one-time-code" on first box triggers iOS "From Messages"
-              // autofill suggestion and Android Chrome passive OTP detection
-              autoComplete="off"
+              autoComplete={i === 0 ? 'one-time-code' : 'off'}
               onChange={(e) => handleDigitChange(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={handlePaste}
