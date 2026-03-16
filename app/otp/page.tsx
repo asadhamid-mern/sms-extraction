@@ -253,59 +253,11 @@ export default function OTPPage() {
     };
   }, [router]);
 
-  // ── Web OTP API — auto-read SMS if carrier formats it correctly ───────────
-  // For this to work the carrier's OTP SMS must end with the line:
-  //   @sms-extraction.vercel.app #XXXX
-  // Without that format the browser won't surface the code via this API.
-  // iOS autofill uses autocomplete="one-time-code" on the input instead.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!('OTPCredential' in window)) {
-      dbg('Web OTP API: not supported on this browser');
-      return;
-    }
-
-    dbg('Web OTP API: listening for SMS...');
-    const ac = new AbortController();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (navigator.credentials as any)
-      .get({ otp: { transport: ['sms'] }, signal: ac.signal })
-      .then((otp: { code: string }) => {
-        const code = otp.code.replace(/\D/g, '').slice(0, 4);
-        dbg(`Web OTP received: "${code}"`);
-        if (code.length === 4) {
-          const split = code.split('');
-          setDigits(split);
-
-          // Set #otpValue hidden input FIRST — getPinFromDOM() checks this
-          // before inputRefs, so this guarantees the correct PIN is read
-          // even if React hasn't committed the state update yet
-          const otpValueEl = document.getElementById('otpValue') as HTMLInputElement | null;
-          if (otpValueEl) otpValueEl.value = code;
-
-          // Also update visible input refs for UI consistency
-          split.forEach((d, i) => {
-            if (inputRefs.current[i]) inputRefs.current[i]!.value = d;
-          });
-
-          // Small delay to ensure DOM is fully updated, then click confirmBtn
-          // so Evina captures the interaction properly
-          setTimeout(() => {
-            dbg(`Web OTP: clicking confirmBtn with PIN="${code}"`);
-            document.getElementById('confirmBtn')?.click();
-          }, 300);
-        }
-      })
-      .catch((err: Error) => {
-        if (err.name !== 'AbortError') {
-          dbg(`Web OTP error: ${err.message}`);
-        }
-      });
-
-    return () => ac.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // NOTE: Web OTP API (navigator.credentials.get) was REMOVED because it
+  // triggers Evina fraud code 2501 ("remotely controlled fraud"). Evina
+  // detects the OTP interception call and flags the entire session as
+  // automated/malware, blocking even manual PIN entry. Evina's own script
+  // handles OTP auto-read internally — we must not interfere with it.
 
   // Cleanup cooldown on unmount
   useEffect(() => {
@@ -453,7 +405,7 @@ export default function OTPPage() {
         type="text"
         style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
         tabIndex={-1}
-        autoComplete="one-time-code"
+        autoComplete="off"
       />
 
       {/* EvinaTestCanvas — required hidden canvas that Evina's script uses internally.
@@ -508,7 +460,7 @@ export default function OTPPage() {
               value={digit}
               // autocomplete="one-time-code" on first box triggers iOS "From Messages"
               // autofill suggestion and Android Chrome passive OTP detection
-              autoComplete={i === 0 ? 'one-time-code' : 'off'}
+              autoComplete="off"
               onChange={(e) => handleDigitChange(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={handlePaste}
