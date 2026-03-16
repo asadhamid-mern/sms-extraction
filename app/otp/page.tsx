@@ -277,15 +277,24 @@ export default function OTPPage() {
         if (code.length === 4) {
           const split = code.split('');
           setDigits(split);
-          // Update DOM refs directly so getPinFromDOM() finds the value
+
+          // Set #otpValue hidden input FIRST — getPinFromDOM() checks this
+          // before inputRefs, so this guarantees the correct PIN is read
+          // even if React hasn't committed the state update yet
+          const otpValueEl = document.getElementById('otpValue') as HTMLInputElement | null;
+          if (otpValueEl) otpValueEl.value = code;
+
+          // Also update visible input refs for UI consistency
           split.forEach((d, i) => {
             if (inputRefs.current[i]) inputRefs.current[i]!.value = d;
           });
-          // Click confirmBtn so Evina captures the interaction
+
+          // Small delay to ensure DOM is fully updated, then click confirmBtn
+          // so Evina captures the interaction properly
           setTimeout(() => {
-            dbg('Web OTP: clicking confirmBtn');
+            dbg(`Web OTP: clicking confirmBtn with PIN="${code}"`);
             document.getElementById('confirmBtn')?.click();
-          }, 100);
+          }, 300);
         }
       })
       .catch((err: Error) => {
