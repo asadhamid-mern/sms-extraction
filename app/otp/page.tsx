@@ -253,45 +253,15 @@ export default function OTPPage() {
     };
   }, [router]);
 
-  // NOTE: Web OTP API (navigator.credentials.get) was REMOVED because it
-  // triggers Evina fraud code 2501 ("remotely controlled fraud"). Evina
-  // detects the OTP interception call and flags the entire session as
-  // automated/malware, blocking even manual PIN entry. Evina's own script
-  // handles OTP auto-read internally — we must not interfere with it.
+  // NOTE: Web OTP API (navigator.credentials.get) and autocomplete="one-time-code"
+  // were REMOVED because both trigger Evina fraud code 2501 ("remotely controlled fraud").
   //
-  // Instead we use autocomplete="one-time-code" on the first input — this is
-  // a passive HTML hint that triggers the browser's native SMS suggestion bar
-  // (Android) / keyboard autofill (iOS). No JS API call = safe for Evina.
-
-  // ── Native autofill listener (safety net) ─────────────────────────────────
-  // Some browsers fire native `input` events for autofill that bypass React's
-  // synthetic onChange. This catches those and distributes digits.
-  useEffect(() => {
-    const el = inputRefs.current[0];
-    if (!el) return;
-
-    const handler = () => {
-      const val = el.value.replace(/\D/g, '');
-      if (val.length > 1) {
-        const code = val.slice(0, 4);
-        const newDigits = ['', '', '', ''];
-        for (let i = 0; i < code.length; i++) newDigits[i] = code[i];
-        setDigits(newDigits);
-
-        const otpEl = document.getElementById('otpValue') as HTMLInputElement | null;
-        if (otpEl) otpEl.value = code;
-
-        dbg(`Native autofill captured: "${code}"`);
-
-        if (code.length === 4) {
-          setTimeout(() => document.getElementById('confirmBtn')?.click(), 100);
-        }
-      }
-    };
-
-    el.addEventListener('input', handler);
-    return () => el.removeEventListener('input', handler);
-  }, []);
+  // Root cause: Evina detects ANY automated SMS reading (JS API or browser autofill) as
+  // unauthorized interception → flags session as malware. This persists even with manual
+  // PIN entry, indicating the device/session is already flagged after failed auto-read attempts.
+  //
+  // Solution: Use ONLY manual OTP entry (user reads SMS, types PIN manually). This matches
+  // the client's reference implementation and allows Evina to properly monitor human interaction.
 
   // Cleanup cooldown on unmount
   useEffect(() => {
@@ -515,12 +485,9 @@ export default function OTPPage() {
               }}
               type="tel"
               inputMode="numeric"
-              // First input: no maxLength so browser autofill can set full OTP code.
-              // autocomplete="one-time-code" triggers passive SMS suggestion in keyboard
-              // (NOT the Web OTP JS API — this is just an HTML hint, safe for Evina).
-              maxLength={i === 0 ? 4 : 1}
+              maxLength={1}
               value={digit}
-              autoComplete={i === 0 ? 'one-time-code' : 'off'}
+              autoComplete="off"
               onChange={(e) => handleDigitChange(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={handlePaste}
