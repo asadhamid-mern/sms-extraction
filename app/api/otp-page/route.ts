@@ -39,43 +39,57 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Call PinRequest server-side to get Evina JS ─────────────────────────
+  // Retry up to 3 times if carrier returns non-zero status (e.g. Status 7)
   let evinaJS = '';
   let pinRequestStatus = '';
+  let usedTrxId = trxId;
 
-  try {
-    const payload = {
-      MSISDN: msisdn,
-      TransactionId: trxId,
-      Headers: request.headers.get('user-agent') || '',
-      UserIP: userIP,
-      ...SERVER_PARAMS,
-    };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const payload = {
+        MSISDN: msisdn,
+        TransactionId: usedTrxId,
+        Headers: request.headers.get('user-agent') || '',
+        UserIP: userIP,
+        ...SERVER_PARAMS,
+      };
 
-    console.log('[otp-page] PinRequest payload:', { ...payload, Password: '***' });
+      console.log(`[otp-page] PinRequest attempt ${attempt}:`, { ...payload, Password: '***' });
 
-    const res = await fetch(PIN_REQUEST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+      const res = await fetch(PIN_REQUEST_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    const raw = await res.json();
-    console.log('[otp-page] PinRequest response keys:', Object.keys(raw));
+      const raw = await res.json();
+      pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
+      evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? '');
 
-    pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
-    evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? '');
+      // Strip <script> wrappers if present
+      evinaJS = evinaJS
+        .trim()
+        .replace(/^<script[^>]*>/i, '')
+        .replace(/<\/script\s*>$/i, '')
+        .trim();
 
-    // Strip <script> wrappers if present
-    evinaJS = evinaJS
-      .trim()
-      .replace(/^<script[^>]*>/i, '')
-      .replace(/<\/script\s*>$/i, '')
-      .trim();
+      console.log(`[otp-page] Attempt ${attempt} → Status: ${pinRequestStatus}, JS len: ${evinaJS.length}`);
 
-    console.log('[otp-page] PinRequest Status:', pinRequestStatus, 'JS length:', evinaJS.length);
-  } catch (err) {
-    console.error('[otp-page] PinRequest error:', err);
-    pinRequestStatus = 'error';
+      if (pinRequestStatus === '0' && evinaJS.length > 0) break;
+
+      // Retry with fresh trxId after 1s delay
+      if (attempt < 3) {
+        usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch (err) {
+      console.error(`[otp-page] PinRequest attempt ${attempt} error:`, err);
+      pinRequestStatus = 'error';
+      if (attempt < 3) {
+        usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
   }
 
   // Mask MSISDN for display
@@ -198,7 +212,7 @@ export async function GET(request: NextRequest) {
   <script>
     // ── State ───────────────────────────────────────────────────────────────
     var MSISDN = ${JSON.stringify(msisdn)};
-    var TRXID  = ${JSON.stringify(trxId)};
+    var TRXID  = ${JSON.stringify(usedTrxId)};
     var PIN_REQUEST_STATUS = ${JSON.stringify(pinRequestStatus)};
     var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
@@ -387,52 +401,13 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Resend OTP ──────────────────────────────────────────────────────────
+    // Full page reload with new trxId so Evina JS is server-rendered in <head>.
+    // AJAX resend would inject Evina JS dynamically → causes 2801/2501 errors.
     function handleResend() {
       if (resendCooldown > 0) return;
-      dbg('Resending OTP...');
-      var link = document.getElementById('resendLink');
-      link.textContent = 'Sending...';
-      link.style.pointerEvents = 'none';
-
-      fetch('/api/pin-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          MSISDN: MSISDN,
-          TransactionId: TRXID,
-          CampaignURL: '',
-          ContentURL: '',
-          Headers: navigator.userAgent,
-          UserIP: '127.0.0.1'
-        })
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        dbg('Resend PinRequest → Status="' + data.Status + '" JS_len=' + (data.JS ? data.JS.length : 0));
-        pins.forEach(function(p) { p.value = ''; });
-        if (otpValue) otpValue.value = '';
-        clearError();
-        updateBtn();
-        pins[0].focus();
-
-        // Start 30s cooldown
-        resendCooldown = 30;
-        var timer = setInterval(function() {
-          resendCooldown--;
-          if (resendCooldown <= 0) {
-            clearInterval(timer);
-            link.textContent = 'Resend OTP';
-            link.style.pointerEvents = 'auto';
-          } else {
-            link.textContent = 'Resend in ' + resendCooldown + 's';
-          }
-        }, 1000);
-      })
-      .catch(function(err) {
-        dbg('Resend error: ' + err);
-        link.textContent = 'Resend OTP';
-        link.style.pointerEvents = 'auto';
-      });
+      dbg('Resending OTP — full page reload with new trxId...');
+      var newTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
+      window.location.href = '/api/otp-page?msisdn=' + encodeURIComponent(MSISDN) + '&trxId=' + newTrxId + '&userIP=127.0.0.1';
     }
   </script>
 </body>
