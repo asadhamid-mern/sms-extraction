@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
     <p class="sub">Enter the PIN sent to <b>${masked}</b></p>
 
     <div class="otp-row" id="otpRow">
-      <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
+      <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
       <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
       <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
       <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
@@ -197,7 +197,7 @@ export async function GET(request: NextRequest) {
 
     <div class="error-msg" id="errorMsg"></div>
 
-    <button class="btn btn-primary" id="confirmBtn" disabled>
+    <button class="btn btn-primary" id="confirmBtn">
       Continue to Watch
     </button>
 
@@ -250,15 +250,19 @@ export async function GET(request: NextRequest) {
     // DOM check
     dbg('DOM check: confirmBtn=' + !!document.getElementById('confirmBtn') + ' otpValue=' + !!document.getElementById('otpValue') + ' EvinaTestCanvas=' + !!document.getElementById('EvinaTestCanvas') + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
 
-    // ── OTP Auto-fill via autocomplete="one-time-code" ─────────────────────
-    // Web OTP API (navigator.credentials.get) was REMOVED permanently because
-    // Evina detects it as automated SMS interception → triggers 2501 fraud.
-    //
-    // Instead, first input has autocomplete="one-time-code" which makes the
-    // browser's keyboard show an OTP suggestion bar when SMS arrives.
-    // User taps the suggestion → browser fills the input → we distribute
-    // across all 4 boxes → auto-submit. No JS API call = Evina-safe.
-    dbg('OTP autofill: using autocomplete="one-time-code" (Evina-safe, no Web OTP API)');
+    // ── CRITICAL: No auto-click, no disabled button ───────────────────────
+    // Evina checks event.isTrusted to distinguish real vs JS-simulated clicks.
+    // confirmBtn.click() → isTrusted=false → Evina flags as automated → 2501.
+    // Button must NEVER be disabled — Evina monitors it from page load.
+    // User must MANUALLY click the button (like the reference implementation).
+    dbg('Mode: manual click only (no auto-submit, no disabled state)');
+
+    // ── WebSocket diagnostic — check if Evina can reach its server ────────
+    try {
+      var ws = new WebSocket('wss://ws.dcbprotect.com:8080');
+      ws.onopen = function() { dbg('Evina WS: connected OK'); ws.close(); };
+      ws.onerror = function() { dbg('Evina WS: CONNECTION FAILED — this may cause 2501'); };
+    } catch(e) { dbg('Evina WS: exception — ' + e.message); }
 
     // ── OTP Input handling ──────────────────────────────────────────────────
     function getFullPin() {
@@ -267,51 +271,23 @@ export async function GET(request: NextRequest) {
       return val.replace(/\\D/g, '');
     }
 
-    function updateBtn() {
-      var pin = getFullPin();
-      confirmBtn.disabled = isVerifying || pin.length !== 4;
-    }
-
     pins.forEach(function(input, i) {
       input.addEventListener('input', function(e) {
         var val = input.value.replace(/\\D/g, '');
-
-        // Multi-digit paste/autofill — distribute across boxes
-        if (val.length > 1) {
-          var code = val.slice(0, 4);
-          for (var j = 0; j < 4; j++) {
-            pins[j].value = code[j] || '';
-          }
-          if (otpValue) otpValue.value = code;
-          dbg('Autofill detected: "' + code + '"');
-          updateBtn();
-          if (code.length === 4) {
-            pins[3].focus();
-            // Auto-click after short delay so Evina captures
-            setTimeout(function() { confirmBtn.click(); }, 200);
-          }
-          return;
-        }
-
         input.value = val.slice(-1);
         clearError();
-        updateBtn();
 
         if (val && i < 3) pins[i + 1].focus();
 
-        // Auto-submit when all 4 filled
+        // Sync to hidden otpValue for Evina
         var full = getFullPin();
-        if (full.length === 4) {
-          if (otpValue) otpValue.value = full;
-          setTimeout(function() { confirmBtn.click(); }, 200);
-        }
+        if (otpValue) otpValue.value = full;
       });
 
       input.addEventListener('keydown', function(e) {
         if (e.key === 'Backspace') {
           if (input.value) {
             input.value = '';
-            updateBtn();
           } else if (i > 0) {
             pins[i - 1].focus();
           }
@@ -326,10 +302,8 @@ export async function GET(request: NextRequest) {
         }
         if (otpValue) otpValue.value = text;
         clearError();
-        updateBtn();
         if (text.length === 4) {
           pins[3].focus();
-          setTimeout(function() { confirmBtn.click(); }, 200);
         } else {
           pins[Math.min(text.length, 3)].focus();
         }
@@ -366,7 +340,7 @@ export async function GET(request: NextRequest) {
 
     function verifyPin(pin) {
       isVerifying = true;
-      confirmBtn.disabled = true;
+      // Do NOT disable button — Evina needs it always enabled
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
       clearError();
       dbg('Verifying PIN: "' + pin + '" (len=' + pin.length + ')');
@@ -396,7 +370,6 @@ export async function GET(request: NextRequest) {
       .finally(function() {
         isVerifying = false;
         confirmBtn.innerHTML = 'Continue to Watch';
-        updateBtn();
       });
     }
 
