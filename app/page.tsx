@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { generateTransactionId } from '@/lib/utils';
 import { logTransaction, updateTransactionStatus } from '@/lib/supabase';
 
@@ -11,7 +10,6 @@ const HE_BASE_URL =
   'http://vivavas1.future-club.com/hepage/he.aspx';
 
 export default function LandingPage() {
-  const router = useRouter();
   const [state, setState] = useState<PageState>('loading');
   const [manualNumber, setManualNumber] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -20,66 +18,40 @@ export default function LandingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const initialized = useRef(false);
 
-  const callPinRequest = useCallback(
+  /**
+   * Navigate to the server-rendered OTP page.
+   *
+   * PinRequest is now called SERVER-SIDE by the /api/otp-page route, which
+   * injects Evina JS directly into <head> as part of the initial HTML.
+   * This matches the client's ASP.NET reference — Evina JS runs on
+   * DOMContentLoaded naturally, fixing the 2501 fraud detection error.
+   */
+  const goToOTPPage = useCallback(
     async ({
       msisdn,
       trxId,
       userIP,
-      userAgent,
     }: {
       msisdn: string;
       trxId: string;
       userIP: string;
-      userAgent: string;
     }) => {
       try {
-        const res = await fetch('/api/pin-request', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            MSISDN: msisdn,
-            TransactionId: trxId,
-            CampaignURL: '',
-            ContentURL: '',
-            Headers: userAgent,
-            UserIP: userIP,
-          }),
-        });
+        sessionStorage.setItem('msisdn', msisdn);
+        sessionStorage.setItem('trxId', trxId);
+        await updateTransactionStatus(trxId, 'pin_requested');
 
-        const data = await res.json();
-        console.log('[Landing] PinRequest response:', data);
-
-        const debug = `Status="${data.Status}" JS_len=${data.JS?.length ?? 0} MSISDN=${msisdn} TrxId=${trxId}`;
-        setDebugInfo(debug);
-        console.log('[Landing] Debug:', debug);
-
-        if (data.Status === '0') {
-          sessionStorage.setItem('evinaJS', data.JS || '');
-          sessionStorage.setItem('msisdn', msisdn);
-          sessionStorage.setItem('trxId', trxId);
-          await updateTransactionStatus(trxId, 'pin_requested');
-          router.push('/otp');
-        } else {
-          await updateTransactionStatus(trxId, 'failed');
-          setErrorMsg(`Subscription failed (code: ${data.Status || 'unknown'}). Please try again.`);
-          setDebugInfo(
-            `MSISDN sent: ${msisdn}\n` +
-            `TrxId: ${trxId}\n` +
-            `API Status: "${data.Status}"\n` +
-            `JS length: ${data.JS?.length ?? 0}\n` +
-            `UserIP: ${userIP}\n` +
-            `Raw response: ${JSON.stringify(data.raw || data, null, 2)}`
-          );
-          setState('error');
-        }
+        // Full page navigation — NOT SPA. The server renders the HTML with
+        // Evina JS already in <head>.
+        window.location.href = `/api/otp-page?msisdn=${encodeURIComponent(msisdn)}&trxId=${encodeURIComponent(trxId)}&userIP=${encodeURIComponent(userIP)}`;
       } catch (err) {
-        console.error('[Landing] PinRequest error:', err);
+        console.error('[Landing] Navigation error:', err);
         setErrorMsg('Network error. Please check your connection and try again.');
         setDebugInfo(`Exception: ${String(err)}`);
         setState('error');
       }
     },
-    [router]
+    []
   );
 
   const initFlow = useCallback(async () => {
@@ -129,7 +101,7 @@ export default function LandingPage() {
       // Clean URL params without triggering a page reload
       window.history.replaceState({}, '', '/');
 
-      await callPinRequest({ msisdn, trxId, userIP, userAgent });
+      await goToOTPPage({ msisdn, trxId, userIP });
     } else if (msisdnParam && !isSuccess) {
       // HE returned msisdn but status is not success — still try with the number
       console.warn('[Landing] HE returned msisdn but status:', statusParam, '— proceeding anyway');
@@ -144,7 +116,7 @@ export default function LandingPage() {
       sessionStorage.setItem('trxId', trxId);
       window.history.replaceState({}, '', '/');
 
-      await callPinRequest({ msisdn, trxId, userIP, userAgent });
+      await goToOTPPage({ msisdn, trxId, userIP });
     } else if (statusParam && !msisdnParam) {
       // Status came back but no msisdn — fall back to manual input
       setState('manual_input');
@@ -184,7 +156,7 @@ export default function LandingPage() {
       const heUrl = `${HE_BASE_URL}?Spname=mobility&trxId=${trxId}`;
       window.location.href = heUrl;
     }
-  }, [callPinRequest]);
+  }, [goToOTPPage]);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -225,7 +197,7 @@ export default function LandingPage() {
       });
     } catch {}
 
-    await callPinRequest({ msisdn, trxId, userIP, userAgent });
+    await goToOTPPage({ msisdn, trxId, userIP });
     setIsSubmitting(false);
   }
 
