@@ -523,20 +523,20 @@ export default function OTPPage() {
           </p>
         </div>
 
-        {/* Get OTP button — user clicks to register real user action with Evina */}
+        {/* Continue button — user clicks to register real user action with Evina */}
         {!userClickedGetOTP ? (
           <button
             onClick={() => {
-              dbg('User clicked "Get OTP" — Evina will now trust subsequent actions as manual');
+              dbg('User clicked "Continue to Watch" — Evina will now trust subsequent actions as manual');
               setUserClickedGetOTP(true);
             }}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors mb-6"
           >
-            Get OTP from SMS
+            Continue to Watch
           </button>
         ) : (
           <div className="mb-6 text-center text-gray-500 text-sm">
-            Listening for OTP...
+            Verifying...
           </div>
         )}
 
