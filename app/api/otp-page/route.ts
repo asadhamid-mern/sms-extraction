@@ -257,12 +257,9 @@ export async function GET(request: NextRequest) {
     // User must MANUALLY click the button (like the reference implementation).
     dbg('Mode: manual click only (no auto-submit, no disabled state)');
 
-    // ── WebSocket diagnostic — check if Evina can reach its server ────────
-    try {
-      var ws = new WebSocket('wss://ws.dcbprotect.com:8080');
-      ws.onopen = function() { dbg('Evina WS: connected OK'); ws.close(); };
-      ws.onerror = function() { dbg('Evina WS: CONNECTION FAILED — this may cause 2501'); };
-    } catch(e) { dbg('Evina WS: exception — ' + e.message); }
+    // NOTE: WebSocket diagnostic removed — our test WS connection could
+    // interfere with Evina's own WS connection to its server.
+    // Evina handles its own WebSocket internally.
 
     // ── OTP Input handling ──────────────────────────────────────────────────
     function getFullPin() {
@@ -390,14 +387,16 @@ export async function GET(request: NextRequest) {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       // CSP must allow Evina inline scripts and WebSocket
+      // Fully permissive CSP — Evina's JS needs to connect to various
+      // servers (WebSocket, HTTP) and we don't know all the URLs it uses.
       'Content-Security-Policy': [
-        "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https: http:",
-        "style-src 'self' 'unsafe-inline'",
-        "connect-src 'self' https: http: wss://ws.dcbprotect.com:8080 wss:",
-        "img-src 'self' data: https: http:",
-        "font-src 'self' data:",
-        "frame-src 'self' https: http:",
+        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
+        "script-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
+        "connect-src * wss: ws: https: http: data: blob:",
+        "style-src * 'unsafe-inline'",
+        "img-src * data: blob:",
+        "font-src * data:",
+        "frame-src *",
       ].join('; '),
     },
   });
