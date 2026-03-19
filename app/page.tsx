@@ -13,10 +13,17 @@ export default function LandingPage() {
   const [state, setState] = useState<PageState>('loading');
   const [manualNumber, setManualNumber] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [debugInfo, setDebugInfo] = useState('');
+  const [debugLines, setDebugLines] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const initialized = useRef(false);
+
+  const dbg = useCallback((msg: string) => {
+    const ts = new Date().toLocaleTimeString();
+    const line = `[${ts}] ${msg}`;
+    console.log('[Landing]', line);
+    setDebugLines(prev => [...prev, line]);
+  }, []);
 
   /**
    * Navigate to the server-rendered OTP page.
@@ -45,9 +52,8 @@ export default function LandingPage() {
         // Evina JS already in <head>.
         window.location.href = `/api/otp-page?msisdn=${encodeURIComponent(msisdn)}&trxId=${encodeURIComponent(trxId)}&userIP=${encodeURIComponent(userIP)}`;
       } catch (err) {
-        console.error('[Landing] Navigation error:', err);
+        dbg('Navigation error: ' + String(err));
         setErrorMsg('Network error. Please check your connection and try again.');
-        setDebugInfo(`Exception: ${String(err)}`);
         setState('error');
       }
     },
@@ -55,6 +61,10 @@ export default function LandingPage() {
   );
 
   const initFlow = useCallback(async () => {
+    dbg('Landing page loaded');
+    dbg('URL: ' + window.location.href);
+    dbg('Hostname: ' + window.location.hostname);
+
     // Parse URL params without useSearchParams to avoid Suspense requirement
     const params = new URLSearchParams(window.location.search);
 
@@ -69,7 +79,7 @@ export default function LandingPage() {
     const statusParam  = getParam('status');
     const trxidParam   = getParam('trxid');
 
-    console.log('[Landing] URL params:', { msisdnParam, statusParam, trxidParam });
+    dbg('URL params: msisdn=' + (msisdnParam || 'NONE') + ' status=' + (statusParam || 'NONE') + ' trxid=' + (trxidParam || 'NONE'));
 
     // Get user IP server-side
     let userIP = '127.0.0.1';
@@ -77,8 +87,9 @@ export default function LandingPage() {
       const ipRes = await fetch('/api/get-ip');
       const ipData = await ipRes.json();
       userIP = ipData.ip;
+      dbg('User IP: ' + userIP);
     } catch (e) {
-      console.error('[Landing] Failed to get IP:', e);
+      dbg('Failed to get IP: ' + String(e));
     }
 
     const userAgent = navigator.userAgent;
@@ -88,6 +99,7 @@ export default function LandingPage() {
 
     if (msisdnParam && isSuccess) {
       // Returning from HE redirect — carrier has given us the MSISDN
+      dbg('HE SUCCESS — MSISDN detected: ' + msisdnParam);
       let trxId = sessionStorage.getItem('trxId');
       if (!trxId) trxId = trxidParam || generateTransactionId();
 
@@ -95,16 +107,18 @@ export default function LandingPage() {
         ? msisdnParam
         : `965${msisdnParam}`;
 
+      dbg('Normalized MSISDN: ' + msisdn + ' | TrxId: ' + trxId);
       sessionStorage.setItem('msisdn', msisdn);
       sessionStorage.setItem('trxId', trxId);
 
       // Clean URL params without triggering a page reload
       window.history.replaceState({}, '', '/');
 
+      dbg('Navigating to OTP page...');
       await goToOTPPage({ msisdn, trxId, userIP });
     } else if (msisdnParam && !isSuccess) {
       // HE returned msisdn but status is not success — still try with the number
-      console.warn('[Landing] HE returned msisdn but status:', statusParam, '— proceeding anyway');
+      dbg('HE returned MSISDN but status="' + statusParam + '" (not Success) — proceeding anyway');
       let trxId = sessionStorage.getItem('trxId');
       if (!trxId) trxId = trxidParam || generateTransactionId();
 
@@ -116,17 +130,22 @@ export default function LandingPage() {
       sessionStorage.setItem('trxId', trxId);
       window.history.replaceState({}, '', '/');
 
+      dbg('Navigating to OTP page with MSISDN: ' + msisdn);
       await goToOTPPage({ msisdn, trxId, userIP });
     } else if (statusParam && !msisdnParam) {
       // Status came back but no msisdn — fall back to manual input
+      dbg('HE FAILED — status="' + statusParam + '" but NO msisdn returned');
+      dbg('Falling back to manual number entry');
       setState('manual_input');
     } else {
       // First visit — generate trxId and log
+      dbg('First visit — no HE params detected');
       let trxId = sessionStorage.getItem('trxId');
       if (!trxId) {
         trxId = generateTransactionId();
         sessionStorage.setItem('trxId', trxId);
       }
+      dbg('TrxId: ' + trxId);
 
       try {
         await logTransaction({
@@ -137,7 +156,7 @@ export default function LandingPage() {
           user_agent: userAgent,
         });
       } catch (e) {
-        console.error('[Landing] Supabase log error:', e);
+        dbg('Supabase log error (non-blocking): ' + String(e));
       }
 
       // HE redirect only works on a real mobile device on the carrier network.
@@ -149,14 +168,17 @@ export default function LandingPage() {
         window.location.hostname.startsWith('10.');
 
       if (isLocalhost) {
+        dbg('Localhost detected — skipping HE redirect, showing manual input');
         setState('manual_input');
         return;
       }
 
       const heUrl = `${HE_BASE_URL}?Spname=mobility&trxId=${trxId}`;
+      dbg('Redirecting to HE: ' + heUrl);
+      dbg('HE should redirect back to: https://sms-extraction.vercel.app/?msisdn=XXX&status=Success&trxid=' + trxId);
       window.location.href = heUrl;
     }
-  }, [goToOTPPage]);
+  }, [goToOTPPage, dbg]);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -208,6 +230,23 @@ export default function LandingPage() {
     initFlow();
   }
 
+  // ── Debug panel component ─────────────────────────────────────────────────
+  const debugPanel = (
+    <div className="mt-4 w-full">
+      <button
+        onClick={() => setShowDebug(v => !v)}
+        className="text-xs text-gray-300 underline w-full text-center"
+      >
+        {showDebug ? 'Hide' : 'Show'} technical details
+      </button>
+      {showDebug && debugLines.length > 0 && (
+        <pre className="mt-2 text-xs text-left bg-gray-100 text-gray-700 rounded-lg p-3 break-all whitespace-pre-wrap max-h-60 overflow-auto font-mono leading-relaxed">
+          {debugLines.join('\n')}
+        </pre>
+      )}
+    </div>
+  );
+
   // ── Error state ───────────────────────────────────────────────────────────
   if (state === 'error') {
     return (
@@ -247,22 +286,7 @@ export default function LandingPage() {
             Enter number manually
           </button>
 
-          {/* Debug panel — tap 5× on error icon to reveal */}
-          {debugInfo && (
-            <div className="mt-4">
-              <button
-                onClick={() => setShowDebug(v => !v)}
-                className="text-xs text-gray-300 underline w-full text-center"
-              >
-                {showDebug ? 'Hide' : 'Show'} debug info
-              </button>
-              {showDebug && (
-                <pre className="mt-2 text-xs text-left bg-gray-100 text-gray-700 rounded-lg p-3 break-all whitespace-pre-wrap">
-                  {debugInfo}
-                </pre>
-              )}
-            </div>
-          )}
+          {debugPanel}
         </div>
       </div>
     );
@@ -333,6 +357,8 @@ export default function LandingPage() {
             </span>
             . Standard operator charges may apply.
           </p>
+
+          {debugPanel}
         </div>
       </div>
     );
@@ -355,6 +381,8 @@ export default function LandingPage() {
           Verifying your number...
         </p>
         <p className="text-gray-400 text-sm mt-1">Please wait a moment</p>
+
+        {debugPanel}
       </div>
     </div>
   );
