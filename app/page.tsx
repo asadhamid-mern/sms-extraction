@@ -7,7 +7,7 @@ import { logTransaction, updateTransactionStatus } from '@/lib/supabase';
 type PageState = 'loading' | 'manual_input' | 'error';
 
 const HE_BASE_URL =
-  'http://vivavas1.future-club.com/hepage/he.aspx';
+  'http://20.8.168.69/hepage/he.aspx';
 
 export default function LandingPage() {
   const [state, setState] = useState<PageState>('loading');
