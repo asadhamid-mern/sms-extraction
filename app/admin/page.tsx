@@ -15,7 +15,6 @@ export default function AdminPanel() {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
 
-  // Form state
   const [contentUrl, setContentUrl] = useState('');
   const [appUrl, setAppUrl] = useState('');
   const [redirectTo, setRedirectTo] = useState<'content' | 'thankyou'>('content');
@@ -76,27 +75,35 @@ export default function AdminPanel() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#0a1628] via-[#0d1f3c] to-[#0a1628] flex items-center justify-center">
-        <div className="w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center">
+        <div className="w-10 h-10 border-[3px] border-[#e2383a]/20 border-t-[#e2383a] rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a1628] via-[#0d1f3c] to-[#0a1628] p-4 md:p-8">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[#0b0e14] p-4 md:p-8">
+      <div className="max-w-xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Admin Panel</h1>
-          <p className="text-white/40 text-sm mt-1">Manage your DCB subscription system settings</p>
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-10 h-10 bg-[#e2383a] rounded-lg flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-tight">Settings</h1>
+            <p className="text-white/30 text-sm">Manage subscription system configuration</p>
+          </div>
         </div>
 
         {/* Message */}
         {message && (
-          <div className={`mb-6 p-4 rounded-xl text-sm font-medium ${
+          <div className={`mb-5 p-4 rounded-xl text-sm font-semibold ${
             messageType === 'success'
-              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-              : 'bg-red-500/15 text-red-400 border border-red-500/20'
+              ? 'bg-green-500/10 text-green-400 border border-green-500/15'
+              : 'bg-red-500/10 text-red-400 border border-red-500/15'
           }`}>
             {message}
           </div>
@@ -104,65 +111,61 @@ export default function AdminPanel() {
 
         <form onSubmit={handleSave}>
           {/* URL Settings */}
-          <div className="bg-white/7 backdrop-blur-xl rounded-2xl p-6 border border-white/8 shadow-xl mb-6">
-            <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-              <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-[#141923] rounded-2xl p-6 border border-white/5 mb-5">
+            <h2 className="text-base font-bold text-white mb-5 flex items-center gap-2">
+              <svg className="w-4 h-4 text-[#e2383a]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
               </svg>
-              URL Management
+              Redirect URLs
             </h2>
-            <p className="text-white/30 text-xs mb-5">Configure where users are redirected after subscription</p>
 
-            {/* Content URL */}
             <div className="mb-5">
-              <label className="block text-white/70 text-sm font-semibold mb-2">
+              <label className="block text-white/60 text-xs font-semibold mb-2 uppercase tracking-wider">
                 Content Page URL
               </label>
-              <p className="text-white/30 text-xs mb-2">
-                Users are redirected here after successful subscription (web page)
+              <p className="text-white/25 text-[11px] mb-2">
+                Where users go after successful subscription (web)
               </p>
               <input
                 type="url"
                 value={contentUrl}
                 onChange={e => setContentUrl(e.target.value)}
                 placeholder="https://www.xoomsports.com"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-emerald-500/50 transition-colors placeholder:text-white/20"
+                className="w-full bg-white/3 border border-white/8 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#e2383a]/50 transition-colors placeholder:text-white/15 font-medium"
               />
             </div>
 
-            {/* App URL */}
             <div className="mb-5">
-              <label className="block text-white/70 text-sm font-semibold mb-2">
+              <label className="block text-white/60 text-xs font-semibold mb-2 uppercase tracking-wider">
                 App Content URL
               </label>
-              <p className="text-white/30 text-xs mb-2">
-                Website loaded inside the WebView app after subscription
+              <p className="text-white/25 text-[11px] mb-2">
+                Website loaded in the WebView app
               </p>
               <input
                 type="url"
                 value={appUrl}
                 onChange={e => setAppUrl(e.target.value)}
                 placeholder="https://www.xoomsports.com"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-emerald-500/50 transition-colors placeholder:text-white/20"
+                className="w-full bg-white/3 border border-white/8 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#e2383a]/50 transition-colors placeholder:text-white/15 font-medium"
               />
             </div>
 
-            {/* Redirect Preference */}
             <div>
-              <label className="block text-white/70 text-sm font-semibold mb-2">
-                After Subscription Redirect
+              <label className="block text-white/60 text-xs font-semibold mb-2 uppercase tracking-wider">
+                After Subscription
               </label>
-              <p className="text-white/30 text-xs mb-3">
-                Choose where to send users after successful OTP verification
+              <p className="text-white/25 text-[11px] mb-3">
+                Where to redirect after OTP verification
               </p>
               <div className="flex gap-3">
                 <button
                   type="button"
                   onClick={() => setRedirectTo('content')}
-                  className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all border ${
+                  className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
                     redirectTo === 'content'
-                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                      : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'
+                      ? 'bg-[#e2383a]/10 border-[#e2383a]/30 text-[#e2383a]'
+                      : 'bg-white/3 border-white/8 text-white/30 hover:border-white/15'
                   }`}
                 >
                   Content Page
@@ -170,10 +173,10 @@ export default function AdminPanel() {
                 <button
                   type="button"
                   onClick={() => setRedirectTo('thankyou')}
-                  className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all border ${
+                  className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
                     redirectTo === 'thankyou'
-                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                      : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'
+                      ? 'bg-[#e2383a]/10 border-[#e2383a]/30 text-[#e2383a]'
+                      : 'bg-white/3 border-white/8 text-white/30 hover:border-white/15'
                   }`}
                 >
                   Thank You Page
@@ -184,27 +187,26 @@ export default function AdminPanel() {
 
           {/* Current Config Display */}
           {config && (
-            <div className="bg-white/7 backdrop-blur-xl rounded-2xl p-6 border border-white/8 shadow-xl mb-6">
-              <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-                <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <div className="bg-[#141923] rounded-2xl p-6 border border-white/5 mb-5">
+              <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Current Live Settings
+                Live Configuration
               </h2>
-              <p className="text-white/30 text-xs mb-4">These are the settings currently active in production</p>
 
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-4">
-                  <span className="text-white/50 text-sm shrink-0">Content URL:</span>
-                  <span className="text-emerald-400 text-sm font-mono break-all text-right">{config.content_url}</span>
+                  <span className="text-white/30 text-sm shrink-0">Content URL</span>
+                  <span className="text-white/60 text-sm font-mono break-all text-right">{config.content_url}</span>
                 </div>
                 <div className="flex items-start justify-between gap-4">
-                  <span className="text-white/50 text-sm shrink-0">App URL:</span>
-                  <span className="text-emerald-400 text-sm font-mono break-all text-right">{config.app_url}</span>
+                  <span className="text-white/30 text-sm shrink-0">App URL</span>
+                  <span className="text-white/60 text-sm font-mono break-all text-right">{config.app_url}</span>
                 </div>
                 <div className="flex items-start justify-between gap-4">
-                  <span className="text-white/50 text-sm shrink-0">Redirect to:</span>
-                  <span className="text-emerald-400 text-sm font-semibold">{config.redirect_to === 'content' ? 'Content Page' : 'Thank You Page'}</span>
+                  <span className="text-white/30 text-sm shrink-0">Redirect</span>
+                  <span className="text-white/60 text-sm font-semibold">{config.redirect_to === 'content' ? 'Content Page' : 'Thank You Page'}</span>
                 </div>
               </div>
             </div>
@@ -214,7 +216,7 @@ export default function AdminPanel() {
           <button
             type="submit"
             disabled={saving}
-            className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-500/25 disabled:shadow-none flex items-center justify-center gap-2 text-base"
+            className="w-full bg-[#e2383a] hover:bg-[#c42f31] disabled:bg-white/10 disabled:text-white/30 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-[#e2383a]/15 disabled:shadow-none flex items-center justify-center gap-2 text-base"
           >
             {saving ? (
               <>
@@ -232,9 +234,8 @@ export default function AdminPanel() {
           </button>
         </form>
 
-        {/* Footer */}
-        <p className="text-center text-white/15 text-xs mt-8">
-          DCB Subscription Admin Panel &bull; Kuwait Telecom
+        <p className="text-center text-white/10 text-xs mt-8">
+          XoomSports Admin Panel
         </p>
       </div>
     </div>

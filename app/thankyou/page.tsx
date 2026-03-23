@@ -18,12 +18,10 @@ export default function ThankYouPage() {
       return;
     }
 
-    // Fetch dynamic content URL from config
     fetch('/api/admin/config')
       .then(r => r.json())
       .then(cfg => {
         if (cfg.content_url) setContentUrl(cfg.content_url);
-        // If redirect_to is 'content', go directly to content URL
         if (cfg.redirect_to === 'content' && cfg.content_url) {
           window.location.href = cfg.content_url;
           return;
@@ -33,12 +31,10 @@ export default function ThankYouPage() {
 
     const t = setTimeout(() => setShow(true), 100);
 
-    // Auto-redirect countdown
     const interval = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(interval);
-          // Will use latest contentUrl from state
           return 0;
         }
         return prev - 1;
@@ -51,7 +47,6 @@ export default function ThankYouPage() {
     };
   }, [router]);
 
-  // Redirect when countdown hits 0
   useEffect(() => {
     if (countdown === 0) {
       window.location.href = contentUrl;
@@ -59,51 +54,86 @@ export default function ThankYouPage() {
   }, [countdown, contentUrl]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a1628] via-[#0d1f3c] to-[#0a1628] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-[#0b0e14] flex flex-col relative overflow-hidden">
       {/* Background effects */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#e2383a]/6 rounded-full blur-[100px]" />
+        <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-[400px] h-[200px] bg-green-500/5 rounded-full blur-[80px]" />
       </div>
 
-      <div className={`w-full max-w-md relative z-10 transition-all duration-500 ${show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-        <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/10 shadow-2xl text-center">
-          {/* Success animation */}
-          <div className="flex justify-center mb-6">
-            <div className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center relative">
-              <div className="absolute inset-0 bg-emerald-500/10 rounded-full animate-ping" />
-              <svg className="w-12 h-12 text-emerald-400 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          </div>
-
-          <h1 className="text-2xl font-extrabold text-white mb-2">
-            You&apos;re Subscribed!
-          </h1>
-          <p className="text-white/50 text-sm leading-relaxed mb-6">
-            Welcome to XoomSports! Enjoy live football streaming.
-          </p>
-
-          {/* Countdown */}
-          <p className="text-white/40 text-xs mb-4">
-            Redirecting to content in <span className="text-emerald-400 font-bold">{countdown}s</span>...
-          </p>
-
-          <button
-            onClick={() => { window.location.href = contentUrl; }}
-            className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 text-lg"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+      {/* Top bar */}
+      <div className="relative z-10 flex items-center justify-between px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 bg-[#e2383a] rounded-lg flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
-            Watch Now
-          </button>
+          </div>
+          <span className="text-white font-extrabold text-lg tracking-tight">XOOM<span className="text-[#e2383a]">SPORTS</span></span>
+        </div>
+        <div className="flex items-center gap-1.5 bg-white/5 rounded-full px-3 py-1.5">
+          <div className="w-2 h-2 bg-green-500 rounded-full" />
+          <span className="text-[11px] text-white/70 font-semibold uppercase tracking-wider">Active</span>
+        </div>
+      </div>
 
-          <p className="text-xs text-white/25 mt-6 leading-relaxed">
-            To unsubscribe, send <span className="font-medium text-white/40">STOP</span> to{' '}
-            <span className="font-medium text-white/40">50995</span> or contact support.
-          </p>
+      {/* Content */}
+      <div className="flex-1 flex items-center justify-center px-5 pb-8 relative z-10">
+        <div className={`w-full max-w-sm transition-all duration-500 ${show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <div className="bg-[#141923] rounded-2xl p-8 border border-white/5 text-center">
+            {/* Success icon */}
+            <div className="flex justify-center mb-6">
+              <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center relative">
+                <div className="absolute inset-0 bg-green-500/5 rounded-full animate-ping" style={{ animationDuration: '2s' }} />
+                <svg className="w-10 h-10 text-green-500 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+
+            <h1 className="text-2xl font-black text-white mb-2">
+              You&apos;re All Set!
+            </h1>
+            <p className="text-white/40 text-sm leading-relaxed mb-6">
+              Your premium subscription is now active.<br/>Enjoy unlimited live football streaming.
+            </p>
+
+            {/* Features unlocked */}
+            <div className="grid grid-cols-3 gap-2 mb-6">
+              <div className="bg-white/3 rounded-xl p-3 border border-white/5">
+                <div className="text-xl mb-1">⚽</div>
+                <div className="text-[10px] text-white/40 font-semibold">All Matches</div>
+              </div>
+              <div className="bg-white/3 rounded-xl p-3 border border-white/5">
+                <div className="text-xl mb-1">📺</div>
+                <div className="text-[10px] text-white/40 font-semibold">HD Quality</div>
+              </div>
+              <div className="bg-white/3 rounded-xl p-3 border border-white/5">
+                <div className="text-xl mb-1">🏆</div>
+                <div className="text-[10px] text-white/40 font-semibold">All Leagues</div>
+              </div>
+            </div>
+
+            {/* Countdown */}
+            <p className="text-white/25 text-xs mb-4">
+              Redirecting in <span className="text-[#e2383a] font-bold">{countdown}s</span>
+            </p>
+
+            <button
+              onClick={() => { window.location.href = contentUrl; }}
+              className="w-full bg-[#e2383a] hover:bg-[#c42f31] text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2.5 text-base shadow-lg shadow-[#e2383a]/20"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+              Watch Now
+            </button>
+
+            <p className="text-[10px] text-white/15 mt-5 leading-relaxed">
+              To unsubscribe, send <span className="text-white/25 font-medium">STOP</span> to{' '}
+              <span className="text-white/25 font-medium">50995</span>
+            </p>
+          </div>
         </div>
       </div>
     </div>

