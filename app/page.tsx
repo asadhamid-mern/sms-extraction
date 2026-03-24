@@ -66,18 +66,21 @@ export default function LandingPage() {
 
     dbg('URL params: msisdn=' + (msisdnParam || 'NONE') + ' status=' + (statusParam || 'NONE') + ' trxid=' + (trxidParam || 'NONE'));
 
-    let userIP = '127.0.0.1';
-    try {
-      const ipRes = await fetch('/api/get-ip');
-      const ipData = await ipRes.json();
-      userIP = ipData.ip;
-      dbg('User IP: ' + userIP);
-    } catch (e) {
-      dbg('Failed to get IP: ' + String(e));
-    }
-
     const userAgent = navigator.userAgent;
     const isSuccess = statusParam?.toLowerCase() === 'success';
+
+    // Only fetch IP when we actually need it (HE returned MSISDN)
+    async function getUserIP() {
+      try {
+        const ipRes = await fetch('/api/get-ip');
+        const ipData = await ipRes.json();
+        dbg('User IP: ' + ipData.ip);
+        return ipData.ip;
+      } catch (e) {
+        dbg('Failed to get IP: ' + String(e));
+        return '127.0.0.1';
+      }
+    }
 
     if (msisdnParam && isSuccess) {
       dbg('HE SUCCESS — MSISDN detected: ' + msisdnParam);
@@ -88,6 +91,7 @@ export default function LandingPage() {
       sessionStorage.setItem('msisdn', msisdn);
       sessionStorage.setItem('trxId', trxId);
       window.history.replaceState({}, '', '/');
+      const userIP = await getUserIP();
       dbg('Navigating to OTP page...');
       await goToOTPPage({ msisdn, trxId, userIP });
     } else if (msisdnParam && !isSuccess) {
@@ -98,6 +102,7 @@ export default function LandingPage() {
       sessionStorage.setItem('msisdn', msisdn);
       sessionStorage.setItem('trxId', trxId);
       window.history.replaceState({}, '', '/');
+      const userIP = await getUserIP();
       dbg('Navigating to OTP page with MSISDN: ' + msisdn);
       await goToOTPPage({ msisdn, trxId, userIP });
     } else if (statusParam && !msisdnParam) {
@@ -112,18 +117,6 @@ export default function LandingPage() {
       }
       dbg('TrxId: ' + trxId);
 
-      try {
-        await logTransaction({
-          transaction_id: trxId,
-          msisdn: '',
-          status: 'initiated',
-          user_ip: userIP,
-          user_agent: userAgent,
-        });
-      } catch (e) {
-        dbg('Supabase log error (non-blocking): ' + String(e));
-      }
-
       const isLocalhost =
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1' ||
@@ -136,9 +129,22 @@ export default function LandingPage() {
         return;
       }
 
+      // Redirect to HE immediately — don't wait for IP/Supabase
       const heUrl = `${HE_BASE_URL}?Spname=mobility&trxId=${trxId}`;
       dbg('Redirecting to HE: ' + heUrl);
+      sessionStorage.setItem('he_redirect_ts', String(Date.now()));
       window.location.href = heUrl;
+
+      // Log to Supabase in background (non-blocking, page is already redirecting)
+      getUserIP().then(ip => {
+        logTransaction({
+          transaction_id: trxId!,
+          msisdn: '',
+          status: 'initiated',
+          user_ip: ip,
+          user_agent: userAgent,
+        }).catch(() => {});
+      });
     }
   }, [goToOTPPage, dbg]);
 
@@ -429,6 +435,12 @@ export default function LandingPage() {
 
           <p className="text-white font-bold text-lg">Detecting your network...</p>
           <p className="text-white/30 text-sm mt-1">This will only take a moment</p>
+          <button
+            onClick={() => setState('manual_input')}
+            className="mt-5 text-[#e2383a] text-sm font-medium hover:underline"
+          >
+            Enter number manually
+          </button>
         </div>
 
         {debugPanel}
