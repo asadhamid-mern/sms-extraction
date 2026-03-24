@@ -240,11 +240,10 @@ export default function LandingPage() {
   if (state === 'manual_input') {
     return (
       <div className="min-h-screen bg-[#0b0e14] flex flex-col relative overflow-hidden">
-        {/* Hero background */}
+        {/* Hero background image */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 bg-gradient-to-b from-[#e2383a]/20 via-transparent to-transparent" />
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[#e2383a]/8 rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#0b0e14] to-transparent" />
+          <img src="/football.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0b0e14]/60 via-[#0b0e14]/80 to-[#0b0e14]" />
         </div>
 
         {/* Top bar */}
@@ -277,8 +276,8 @@ export default function LandingPage() {
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-2xl">⚽</div>
-                  <span className="text-white text-xs font-bold text-center">Team A</span>
+                  <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-xl font-black text-white/80">RM</div>
+                  <span className="text-white text-xs font-bold text-center">Real Madrid</span>
                 </div>
                 <div className="flex flex-col items-center gap-1 px-4">
                   <div className="flex items-center gap-3">
@@ -289,8 +288,8 @@ export default function LandingPage() {
                   <span className="text-[10px] text-[#e2383a] font-bold">78&apos;</span>
                 </div>
                 <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-2xl">⚽</div>
-                  <span className="text-white text-xs font-bold text-center">Team B</span>
+                  <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-xl font-black text-white/80">BAR</div>
+                  <span className="text-white text-xs font-bold text-center">Barcelona</span>
                 </div>
               </div>
             </div>
@@ -411,7 +410,8 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#0b0e14] flex flex-col items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#e2383a]/6 rounded-full blur-[100px]" />
+        <img src="/football.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-[#0b0e14]/85" />
       </div>
 
       <div className="w-full max-w-sm relative z-10">
