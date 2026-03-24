@@ -3,6 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 const PIN_VERIFY_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinVerify';
 
+// Same server-side credentials as PinRequest — carrier requires them for verification too
+const SERVER_PARAMS = {
+  UserId: '166',
+  Password: 'Mobility_MI@123',
+  ProductId: '479',
+  TelcoId: '7',
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -15,11 +23,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build payload — include MSISDN if provided (some carriers require it)
-    const payload: Record<string, string> = { TransactionId, Pin };
+    // Build payload with server credentials + client params
+    const payload: Record<string, string> = {
+      TransactionId,
+      Pin,
+      ...SERVER_PARAMS,
+    };
     if (MSISDN) payload.MSISDN = MSISDN;
 
-    console.log('[PinVerify] Sending payload:', payload);
+    console.log('[PinVerify] Sending payload:', { ...payload, Password: '***' });
 
     const response = await fetch(PIN_VERIFY_URL, {
       method: 'POST',

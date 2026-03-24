@@ -607,13 +607,14 @@ export async function GET(request: NextRequest) {
         }
       }, 400);
 
-      // Show manual entry after 10 seconds
+      // Show manual entry after 15 seconds — but keep Web OTP listener alive
+      // so the Chrome "Allow" dialog stays visible for the user to tap
       otpTimeout = setTimeout(function() {
-        dbg('Auto-verify timeout (10s) — showing manual entry');
+        dbg('Auto-verify timeout (15s) — showing manual entry (Web OTP still listening)');
         clearInterval(otpPollTimer);
-        if (webOtpAbort) webOtpAbort.abort();
+        // DO NOT abort webOtpAbort here — let Chrome dialog stay visible
         showManualEntry();
-      }, 10000);
+      }, 15000);
 
       // IMPORTANT: Call PinRequest NOW (after Web OTP listener is already active)
       // This ensures SMS arrives AFTER the listener is set up
@@ -691,7 +692,8 @@ export async function GET(request: NextRequest) {
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        dbg('PinRequest response: Status=' + data.Status + ' JS_len=' + (data.JS || '').length);
+        var rawKeys = data.raw ? Object.keys(data.raw).join(',') : 'none';
+        dbg('PinRequest response: Status=' + data.Status + ' JS_len=' + (data.JS || '').length + ' keys=' + rawKeys);
 
         // Inject Evina JS if returned
         var js = (data.JS || '').trim()
@@ -766,7 +768,7 @@ export async function GET(request: NextRequest) {
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        dbg('PinVerify → Status="' + data.Status + '"');
+        dbg('PinVerify → Status="' + data.Status + '" raw=' + JSON.stringify(data.raw || {}));
         if (data.Status === '0' || data.Status === '103') {
           dbg('SUCCESS — redirecting');
           document.getElementById('stepDot3').classList.add('active');
