@@ -276,7 +276,7 @@ export default function LandingPage() {
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-xl font-black text-white/80">RM</div>
+                  <img src="/real-madrid.png" alt="Real Madrid" className="w-12 h-12 object-contain drop-shadow-lg" />
                   <span className="text-white text-xs font-bold text-center">Real Madrid</span>
                 </div>
                 <div className="flex flex-col items-center gap-1 px-4">
@@ -288,7 +288,7 @@ export default function LandingPage() {
                   <span className="text-[10px] text-[#e2383a] font-bold">78&apos;</span>
                 </div>
                 <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-xl font-black text-white/80">BAR</div>
+                  <img src="/barcelona.png" alt="Barcelona" className="w-12 h-12 object-contain drop-shadow-lg" />
                   <span className="text-white text-xs font-bold text-center">Barcelona</span>
                 </div>
               </div>
