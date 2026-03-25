@@ -871,7 +871,7 @@ export async function GET(request: NextRequest) {
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        dbg('PinVerify -> Status="' + data.Status + '" raw=' + JSON.stringify(data.raw || {}));
+        dbg('PinVerify -> Status="' + data.Status + '" field=' + (data._fieldUsed || 'default') + ' tried=' + JSON.stringify(data._tried || []) + ' raw=' + JSON.stringify(data.raw || {}));
         if (data.Status === '0' || data.Status === '103') {
           dbg('SUCCESS — redirecting');
           document.getElementById('stepDot3').classList.add('active');
