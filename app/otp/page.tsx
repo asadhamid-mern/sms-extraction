@@ -524,7 +524,7 @@ export default function OTPPage() {
         </div>
 
         {/* Continue button — user clicks to register real user action with Evina */}
-        {!userClickedGetOTP ? (
+        {!userClickedGetOTP && (
           <button
             onClick={() => {
               dbg('User clicked "Continue to Watch" — Evina will now trust subsequent actions as manual');
@@ -534,10 +534,6 @@ export default function OTPPage() {
           >
             Continue to Watch
           </button>
-        ) : (
-          <div className="mb-6 text-center text-gray-500 text-sm">
-            Verifying...
-          </div>
         )}
 
         {/* 4-digit OTP inputs */}

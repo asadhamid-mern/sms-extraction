@@ -314,7 +314,15 @@ export async function GET(request: NextRequest) {
       document.getElementById('phase2').classList.remove('phase-hidden');
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
-      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+
+      // Skip the "Verifying..." spinner — go straight to manual OTP input
+      // and start Web OTP at the same time so Chrome dialog appears alongside the input fields
+      document.getElementById('autoReading').classList.add('phase-hidden');
+      document.getElementById('manualEntry').classList.remove('phase-hidden');
+      document.getElementById('resendArea').classList.remove('phase-hidden');
+      confirmBtn.textContent = 'Verify Code';
+      setTimeout(function() { pins[0].focus(); }, 100);
+      dbg('OTP input shown — starting Web OTP listener');
       startWebOTP();
     }
 
@@ -329,35 +337,24 @@ export async function GET(request: NextRequest) {
 
     function startWebOTP() {
       if (!('OTPCredential' in window)) {
-        dbg('Web OTP: not available — manual entry');
-        showManualEntry();
+        dbg('Web OTP: not available on this browser');
         return;
       }
-      dbg('Web OTP: listening for SMS...');
+      dbg('Web OTP: listening for SMS (Chrome dialog should appear now)...');
       otpAbort = new AbortController();
-
-      var timeout = setTimeout(function() {
-        dbg('Web OTP: timeout (60s) — manual entry');
-        if (otpAbort) otpAbort.abort();
-        showManualEntry();
-      }, 60000);
 
       navigator.credentials.get({
         otp: { transport: ['sms'] },
         signal: otpAbort.signal
       }).then(function(otp) {
-        clearTimeout(timeout);
         if (otp && otp.code) {
           dbg('Web OTP: received code "' + otp.code + '"');
           fillAndVerify(otp.code);
         } else {
-          dbg('Web OTP: no code');
-          showManualEntry();
+          dbg('Web OTP: no code received');
         }
       }).catch(function(err) {
-        clearTimeout(timeout);
         dbg('Web OTP: ' + (err.name === 'AbortError' ? 'aborted' : 'error — ' + err.message));
-        showManualEntry();
       });
     }
 
