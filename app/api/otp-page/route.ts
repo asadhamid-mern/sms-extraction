@@ -24,11 +24,10 @@ export async function GET(request: NextRequest) {
     return new Response('Missing msisdn or trxId', { status: 400 });
   }
 
-  // ── Call PinRequest server-side to get Evina JS ─────────────────────────
-  // MUST be server-side: Evina JS goes in <head> so DOMContentLoaded fires
-  // with Evina running from the start. Dynamic injection causes error 2804.
-  // Retry up to 3 times if carrier returns non-zero status.
-  let evinaJS = '';
+  // ── Call PinRequest server-side to trigger SMS ──────────────────────────
+  // PinRequest sends the OTP SMS to the user's phone.
+  // We do NOT inject Evina JS — it was blocking Chrome's Web OTP dialog
+  // by monkey-patching browser APIs (navigator.credentials).
   let pinRequestStatus = '';
   let usedTrxId = trxId;
 
@@ -52,17 +51,10 @@ export async function GET(request: NextRequest) {
 
       const raw = await res.json();
       pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
-      evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? '');
 
-      evinaJS = evinaJS
-        .trim()
-        .replace(/^<script[^>]*>/i, '')
-        .replace(/<\/script\s*>$/i, '')
-        .trim();
+      console.log(`[otp-page] Attempt ${attempt} -> Status: ${pinRequestStatus}`);
 
-      console.log(`[otp-page] Attempt ${attempt} -> Status: ${pinRequestStatus}, JS len: ${evinaJS.length}`);
-
-      if (pinRequestStatus === '0' && evinaJS.length > 0) break;
+      if (pinRequestStatus === '0') break;
 
       if (attempt < 3) {
         usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
@@ -82,7 +74,6 @@ export async function GET(request: NextRequest) {
     ? `+${msisdn.slice(0, 3)} ${msisdn.slice(3, 5)}***${msisdn.slice(-3)}`
     : msisdn;
 
-  // Evina JS goes DIRECTLY in <head> — exactly like the original working version
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -147,13 +138,10 @@ export async function GET(request: NextRequest) {
     .pulse { animation: pulse 2s ease-in-out infinite; }
     .phase-hidden { display: none !important; }
   </style>
-  ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
+  <!-- Evina JS removed — was blocking Chrome Web OTP dialog -->
 </head>
 <body>
   <div class="bg-glow"></div>
-  <a href="#" id="EvinaTrapLink" style="display:none">CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j'en profite - T\u00e9l\u00e9charger - CONTINUER - ENTRER - S'ABONNER - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0622\u0646 - VOIR - ACCEPT - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0627\u0646 - \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643</a>
-  <input id="otpValue" type="text" style="position:absolute;left:-9999px;opacity:0" tabindex="-1" autocomplete="off">
-  <canvas id="EvinaTestCanvas" width="500" height="50" style="display:none"></canvas>
 
   <div class="topbar">
     <div class="brand">
@@ -241,7 +229,7 @@ export async function GET(request: NextRequest) {
     var MSISDN = ${JSON.stringify(msisdn)};
     var TRXID  = ${JSON.stringify(usedTrxId)};
     var PIN_REQUEST_STATUS = ${JSON.stringify(pinRequestStatus)};
-    var EVINA_JS_LEN = ${evinaJS.length};
+    var EVINA_REMOVED = true;
     var isVerifying = false;
     var phase = 1;
     var otpAbort = null;
@@ -249,7 +237,6 @@ export async function GET(request: NextRequest) {
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
     var errorMsg = document.getElementById('errorMsg');
-    var otpValue = document.getElementById('otpValue');
     var webOTPStarted = false;
 
     function dbg(msg) {
@@ -267,8 +254,8 @@ export async function GET(request: NextRequest) {
     }
 
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID);
-    dbg('PinRequest: Status=' + PIN_REQUEST_STATUS + ' Evina=' + (EVINA_JS_LEN > 0 ? 'YES(' + EVINA_JS_LEN + ')' : 'NO'));
-    dbg('DOM: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
+    dbg('PinRequest: Status=' + PIN_REQUEST_STATUS + ' Evina=REMOVED');
+    dbg('DOM: confirmBtn=' + !!confirmBtn);
 
     function getFullPin() {
       var val = '';
@@ -279,11 +266,21 @@ export async function GET(request: NextRequest) {
     pins.forEach(function(input, i) {
       input.addEventListener('input', function() {
         var val = input.value.replace(/\\D/g, '');
+        // Multi-char = Chrome SMS keyboard autofill
+        if (val.length > 1) {
+          var code = val.slice(0, 4);
+          for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
+          pins[Math.min(code.length, 3)].focus();
+          clearError();
+          if (code.length === 4) {
+            dbg('Chrome autofill: "' + code + '"');
+            setTimeout(function() { verifyPin(code); }, 300);
+          }
+          return;
+        }
         input.value = val.slice(-1);
         clearError();
         if (val && i < 3) pins[i + 1].focus();
-        var full = getFullPin();
-        if (otpValue) otpValue.value = full;
       });
       input.addEventListener('keydown', function(e) {
         if (e.key === 'Backspace') { if (input.value) input.value = ''; else if (i > 0) pins[i - 1].focus(); }
@@ -292,9 +289,12 @@ export async function GET(request: NextRequest) {
         e.preventDefault();
         var text = (e.clipboardData || window.clipboardData).getData('text').replace(/\\D/g, '').slice(0, 4);
         for (var j = 0; j < 4; j++) pins[j].value = text[j] || '';
-        if (otpValue) otpValue.value = text;
         clearError();
         pins[Math.min(text.length, 3)].focus();
+        if (text.length === 4) {
+          dbg('Paste autofill: "' + text + '"');
+          setTimeout(function() { verifyPin(text); }, 300);
+        }
       });
     });
 
@@ -371,7 +371,6 @@ export async function GET(request: NextRequest) {
       document.getElementById('autoReading').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       for (var i = 0; i < 4; i++) pins[i].value = cleaned[i];
-      if (otpValue) otpValue.value = cleaned;
 
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
       dbg('Auto-verify with code: "' + cleaned + '"');
@@ -398,9 +397,6 @@ export async function GET(request: NextRequest) {
         goToPhase2();
       } else if (phase === 2) {
         var pin = getFullPin();
-        if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
-          pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
-        }
         dbg('Manual verify — pin="' + pin + '"');
         if (pin.length !== 4 || isVerifying) return;
         verifyPin(pin);
@@ -429,7 +425,6 @@ export async function GET(request: NextRequest) {
           showManualEntry();
           showError('Invalid code (error: ' + data.Status + '). Try again.');
           pins.forEach(function(p) { p.value = ''; });
-          if (otpValue) otpValue.value = '';
           setTimeout(function() { pins[0].focus(); }, 50);
         }
       })
