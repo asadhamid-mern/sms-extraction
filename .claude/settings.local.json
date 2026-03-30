@@ -21,7 +21,9 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(to ensure:*)",
-      "Bash(understand if it 's manual or automated.\":*)"
+      "Bash(understand if it 's manual or automated.\":*)",
+      "Bash(pnpm build:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }
