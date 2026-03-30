@@ -192,8 +192,11 @@ export async function GET(request: NextRequest) {
               <h2>Enter Verification Code</h2>
               <p>PIN sent to <b>${masked}</b></p>
             </div>
+            <!-- Hidden input receives full OTP from Chrome auto-fill (visible pins have maxlength=1 which truncates) -->
+            <input id="otpFull" type="text" inputmode="numeric" autocomplete="one-time-code"
+                   style="position:absolute;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;" maxlength="6" tabindex="-1">
             <div class="otp-row" id="otpRow">
-              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="one-time-code">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
@@ -237,6 +240,7 @@ export async function GET(request: NextRequest) {
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
     var errorMsg = document.getElementById('errorMsg');
+    var otpFull = document.getElementById('otpFull');
     var webOTPStarted = false;
 
     function dbg(msg) {
@@ -297,6 +301,26 @@ export async function GET(request: NextRequest) {
         }
       });
     });
+
+    // Hidden input catches Chrome auto-fill when user taps "Allow" on SMS dialog
+    // Chrome fills this input (no maxlength=1 restriction) then we distribute to pin boxes
+    function handleOtpFullFill() {
+      var code = otpFull.value.replace(/\\D/g, '').slice(0, 4);
+      if (code.length >= 1) {
+        for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
+        clearError();
+        if (code.length === 4) {
+          dbg('Chrome auto-fill (hidden input): "' + code + '"');
+          if (phase === 1) goToPhase2();
+          pins[3].focus();
+          setTimeout(function() { verifyPin(code); }, 300);
+        }
+      }
+    }
+    if (otpFull) {
+      otpFull.addEventListener('input', handleOtpFullFill);
+      otpFull.addEventListener('change', handleOtpFullFill);
+    }
 
     function showError(msg) {
       errorMsg.textContent = msg;
