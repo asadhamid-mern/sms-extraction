@@ -292,12 +292,15 @@ export async function GET(request: NextRequest) {
         var val = input.value.replace(/\\D/g, '');
         // Multi-char = Chrome SMS keyboard autofill
         if (val.length > 1) {
+          if (isVerifying) return;
           var code = val.slice(0, 4);
           for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
+          if (otpValue) otpValue.value = code;
           pins[Math.min(code.length, 3)].focus();
           clearError();
           if (code.length === 4) {
             dbg('Chrome autofill: "' + code + '"');
+            if (phase === 1) goToPhase2();
             setTimeout(function() { verifyPin(code); }, 300);
           }
           return;
@@ -312,25 +315,32 @@ export async function GET(request: NextRequest) {
       });
       input.addEventListener('paste', function(e) {
         e.preventDefault();
+        if (isVerifying) return;
         var text = (e.clipboardData || window.clipboardData).getData('text').replace(/\\D/g, '').slice(0, 4);
         for (var j = 0; j < 4; j++) pins[j].value = text[j] || '';
+        if (otpValue) otpValue.value = text;
         clearError();
         pins[Math.min(text.length, 3)].focus();
         if (text.length === 4) {
           dbg('Paste autofill: "' + text + '"');
+          if (phase === 1) goToPhase2();
           setTimeout(function() { verifyPin(text); }, 300);
         }
       });
     });
 
-    // Hidden input catches Chrome auto-fill when user taps "Allow" on SMS dialog
-    // Chrome fills this input (no maxlength=1 restriction) then we distribute to pin boxes
+    // Hidden input catches Chrome/App auto-fill
+    // Guard against multiple fires (Android injects via 3 methods + input/change both fire)
+    var otpFullHandled = false;
     function handleOtpFullFill() {
+      if (otpFullHandled || isVerifying) return;
       var code = otpFull.value.replace(/\\D/g, '').slice(0, 4);
       if (code.length >= 1) {
         for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
+        if (otpValue) otpValue.value = code;
         clearError();
         if (code.length === 4) {
+          otpFullHandled = true;
           dbg('Chrome auto-fill (hidden input): "' + code + '"');
           if (phase === 1) goToPhase2();
           pins[3].focus();
@@ -484,6 +494,7 @@ export async function GET(request: NextRequest) {
       })
       .finally(function() {
         isVerifying = false;
+        otpFullHandled = false;
         if (phase === 2) {
           var manual = document.getElementById('manualEntry');
           if (!manual.classList.contains('phase-hidden')) confirmBtn.textContent = 'Verify Code';
