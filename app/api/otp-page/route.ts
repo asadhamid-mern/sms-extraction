@@ -386,20 +386,30 @@ export async function GET(request: NextRequest) {
 
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
       dbg('Auto-verify with code: "' + cleaned + '"');
-      setTimeout(function() { verifyPin(cleaned); }, 500);
+      setTimeout(function() { if (!isVerifying) verifyPin(cleaned); }, 500);
+    }
+
+    // If PinRequest failed (Status != 0), skip spinner and go straight to error
+    if (PIN_REQUEST_STATUS !== '0') {
+      dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — SMS was NOT sent');
+      goToPhase2();
+      showManualEntry();
+      showError('SMS could not be sent (error: ' + PIN_REQUEST_STATUS + '). Tap Resend to try again.');
     }
 
     confirmBtn.addEventListener('click', function(e) {
-      dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted);
+      dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted + ' otpFullHandled=' + otpFullHandled + ' isVerifying=' + isVerifying);
       if (phase === 1) {
         goToPhase2();
       } else if (phase === 2) {
+        // If auto-fill already triggered verifyPin, skip
+        if (otpFullHandled || isVerifying) { dbg('Skipping — auto-verify already in progress'); return; }
         var pin = getFullPin();
         if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
           pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
         }
         dbg('Manual verify — pin="' + pin + '"');
-        if (pin.length !== 4 || isVerifying) return;
+        if (pin.length !== 4) return;
         verifyPin(pin);
       }
     });
