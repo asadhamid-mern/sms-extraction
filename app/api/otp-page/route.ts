@@ -165,6 +165,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
+    <span style="position:absolute;top:4px;right:8px;font-size:9px;color:rgba(255,255,255,0.15);">v6</span>
   </div>
 
   <div class="main">
@@ -243,6 +244,7 @@ export async function GET(request: NextRequest) {
     var PIN_REQUEST_STATUS = ${JSON.stringify(pinRequestStatus)};
     var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
+    var pinVerified = false;  // session-level guard — only ONE verifyPin call ever
     var phase = 1;
 
     var pins = document.querySelectorAll('.otp-input');
@@ -394,7 +396,9 @@ export async function GET(request: NextRequest) {
       dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — SMS was NOT sent');
       goToPhase2();
       showManualEntry();
-      showError('SMS could not be sent (error: ' + PIN_REQUEST_STATUS + '). Tap Resend to try again.');
+      var pinReqErr = 'SMS could not be sent (error: ' + PIN_REQUEST_STATUS + '). Tap Resend to try again.';
+      if (PIN_REQUEST_STATUS === '7') pinReqErr = 'Service temporarily unavailable. Please wait a moment and tap Resend.';
+      showError(pinReqErr);
     }
 
     confirmBtn.addEventListener('click', function(e) {
@@ -415,6 +419,8 @@ export async function GET(request: NextRequest) {
     });
 
     function verifyPin(pin) {
+      if (pinVerified) { dbg('verifyPin BLOCKED — already verified this session'); return; }
+      pinVerified = true;
       isVerifying = true;
       confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
       clearError();
@@ -434,9 +440,14 @@ export async function GET(request: NextRequest) {
           window.location.href = '/thankyou';
         } else {
           showManualEntry();
-          showError('Invalid code (error: ' + data.Status + '). Try again.');
+          var errText = 'Invalid code (error: ' + data.Status + '). Try again.';
+          if (data.Status === '2501') errText = 'This code has already been used. Tap Resend for a new code.';
+          if (data.Status === '2801') errText = 'Verification rejected by carrier. Tap Resend to try again.';
+          showError(errText);
           pins.forEach(function(p) { p.value = ''; });
           if (otpValue) otpValue.value = '';
+          // Allow retry after failure
+          pinVerified = false;
           setTimeout(function() { pins[0].focus(); }, 50);
         }
       })
@@ -444,6 +455,7 @@ export async function GET(request: NextRequest) {
         dbg('PinVerify ERROR: ' + err);
         showManualEntry();
         showError('Network error. Please try again.');
+        pinVerified = false;
       })
       .finally(function() {
         isVerifying = false;
