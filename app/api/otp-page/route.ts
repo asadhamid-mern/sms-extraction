@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v7</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v8</span>
   </div>
 
   <div class="main">
@@ -298,8 +298,9 @@ export async function GET(request: NextRequest) {
           pins[Math.min(code.length, 3)].focus();
           clearError();
           if (code.length === 4) {
-            dbg('Chrome autofill: "' + code + '"');
+            dbg('Chrome autofill: "' + code + '" (manual-verify mode)');
             if (phase === 1) goToPhase2();
+            showManualEntry();
           }
           return;
         }
@@ -320,8 +321,9 @@ export async function GET(request: NextRequest) {
         clearError();
         pins[Math.min(text.length, 3)].focus();
         if (text.length === 4) {
-          dbg('Paste autofill: "' + text + '"');
+          dbg('Paste autofill: "' + text + '" (manual-verify mode)');
           if (phase === 1) goToPhase2();
+          showManualEntry();
         }
       });
     });
@@ -338,9 +340,11 @@ export async function GET(request: NextRequest) {
         clearError();
         if (code.length === 4) {
           otpFullHandled = true;
-          dbg('Chrome auto-fill: "' + code + '"');
+          dbg('Chrome auto-fill: "' + code + '" (manual-verify mode — waiting for user tap)');
           if (phase === 1) goToPhase2();
-          fillAndVerify(code);
+          // v8: Do NOT auto-verify — show manual entry so user taps Verify Code
+          showManualEntry();
+          otpFullHandled = false; // allow confirmBtn to work
         }
       }
     }
@@ -411,12 +415,13 @@ export async function GET(request: NextRequest) {
     }
 
     confirmBtn.addEventListener('click', function(e) {
-      dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted + ' otpFullHandled=' + otpFullHandled + ' isVerifying=' + isVerifying);
+      dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted + ' isVerifying=' + isVerifying);
       if (phase === 1) {
         goToPhase2();
       } else if (phase === 2) {
-        // If auto-fill already triggered verifyPin, skip
-        if (otpFullHandled || isVerifying) { dbg('Skipping — auto-verify already in progress'); return; }
+        if (isVerifying) { dbg('Skipping — verify already in progress'); return; }
+        // v8 TEST: require real user tap (isTrusted=true) for PinVerify
+        if (!e.isTrusted) { dbg('v8: Ignoring programmatic click — user must tap Verify Code'); return; }
         var pin = getFullPin();
         if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
           pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
