@@ -51,7 +51,13 @@ export async function GET(request: NextRequest) {
 
       const raw = await res.json();
       pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
-      evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? '');
+
+      // Try multiple possible field names for Evina JS
+      evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? raw.javascript ?? raw.Script ?? raw.script ?? raw.Evina ?? raw.evina ?? '');
+
+      // Log all response fields for debugging
+      console.log(`[otp-page] Attempt ${attempt} raw response keys:`, Object.keys(raw));
+      console.log(`[otp-page] Attempt ${attempt} raw response:`, JSON.stringify(raw).slice(0, 500));
 
       evinaJS = evinaJS
         .trim()
@@ -61,8 +67,11 @@ export async function GET(request: NextRequest) {
 
       console.log(`[otp-page] Attempt ${attempt} -> Status: ${pinRequestStatus}, JS len: ${evinaJS.length}`);
 
-      if (pinRequestStatus === '0' && evinaJS.length > 0) break;
+      // If Status=0, SMS was sent — STOP retrying regardless of Evina
+      // Retrying with a new trxId would cause trxId mismatch with the OTP (error 2501)
+      if (pinRequestStatus === '0') break;
 
+      // Only retry with new trxId if PinRequest FAILED (SMS not sent)
       if (attempt < 3) {
         usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
         await new Promise(r => setTimeout(r, 1000));
@@ -165,7 +174,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:4px;right:8px;font-size:9px;color:rgba(255,255,255,0.15);">v6</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v7</span>
   </div>
 
   <div class="main">
