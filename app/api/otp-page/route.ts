@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v9</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v10</span>
   </div>
 
   <div class="main">
@@ -338,9 +338,12 @@ export async function GET(request: NextRequest) {
         clearError();
         if (code.length === 4) {
           otpFullHandled = true;
-          dbg('Chrome auto-fill: "' + code + '"');
+          dbg('Chrome auto-fill: "' + code + '" — waiting for user tap on Verify Code');
           if (phase === 1) goToPhase2();
-          fillAndVerify(code);
+          // Show manual entry with code pre-filled — user must tap Verify Code
+          // Evina requires a real user click (isTrusted=true) on confirmBtn
+          showManualEntry();
+          otpFullHandled = false; // allow confirmBtn to work
         }
       }
     }
@@ -415,8 +418,7 @@ export async function GET(request: NextRequest) {
       if (phase === 1) {
         goToPhase2();
       } else if (phase === 2) {
-        // Skip if auto-fill already triggered verifyPin
-        if (otpFullHandled || isVerifying) { dbg('Skipping — auto-verify already in progress'); return; }
+        if (isVerifying) { dbg('Skipping — verify already in progress'); return; }
         var pin = getFullPin();
         if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
           pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
