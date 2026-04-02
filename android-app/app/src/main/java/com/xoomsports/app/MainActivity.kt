@@ -276,16 +276,9 @@ class MainActivity : AppCompatActivity() {
                         otcInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
 
-                    // Auto-submit after filling
-                    setTimeout(function() {
-                        // Try clicking verify/submit button
-                        var verifyBtn = document.querySelector('#confirmBtn') ||
-                                       document.querySelector('#verifyBtn') ||
-                                       document.querySelector('button[type="submit"]');
-                        if (verifyBtn) {
-                            verifyBtn.click();
-                        }
-                    }, 300);
+                    // Do NOT click confirmBtn — Evina anti-fraud monitors this button
+                    // and requires a real user tap (isTrusted=true).
+                    // Code is pre-filled; user just taps Verify Code.
                 })();
                 """.trimIndent(),
                 null

