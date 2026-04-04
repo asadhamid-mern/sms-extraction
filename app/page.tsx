@@ -62,9 +62,18 @@ export default function LandingPage() {
 
     const msisdnParam = getParam('msisdn');
     const statusParam  = getParam('status');
-    const trxidParam   = getParam('trxid');
+    // Carrier may return trxid, trid, or TrxId — all must resolve to the same session id
+    const trxidParam =
+      getParam('trxid') ?? getParam('trid') ?? getParam('TrxId') ?? getParam('TRXID');
 
-    dbg('URL params: msisdn=' + (msisdnParam || 'NONE') + ' status=' + (statusParam || 'NONE') + ' trxid=' + (trxidParam || 'NONE'));
+    dbg(
+      'URL params: msisdn=' +
+        (msisdnParam || 'NONE') +
+        ' status=' +
+        (statusParam || 'NONE') +
+        ' trxId=' +
+        (trxidParam || 'NONE')
+    );
 
     const userAgent = navigator.userAgent;
     const isSuccess = statusParam?.toLowerCase() === 'success';

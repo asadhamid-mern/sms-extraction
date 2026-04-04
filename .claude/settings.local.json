@@ -23,7 +23,8 @@
       "Bash(to ensure:*)",
       "Bash(understand if it 's manual or automated.\":*)",
       "Bash(pnpm build:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(gh repo:*)"
     ]
   }
 }

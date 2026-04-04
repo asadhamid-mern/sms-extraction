@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v14</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v15</span>
   </div>
 
   <div class="main">
@@ -455,7 +455,8 @@ export async function GET(request: NextRequest) {
       fetch('/api/pin-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ TransactionId: TRXID, Pin: pin, MSISDN: MSISDN })
+        // Match telco sample: only TransactionId + Pin (see /api/pin-verify)
+        body: JSON.stringify({ TransactionId: TRXID, Pin: pin })
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
