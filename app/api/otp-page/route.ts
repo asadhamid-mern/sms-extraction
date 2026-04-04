@@ -157,14 +157,15 @@ export async function GET(request: NextRequest) {
   </style>
   <script>
   try{Object.defineProperty(navigator,'webdriver',{get:function(){return false}});}catch(e){}
-  // Block ALL synthetic clicks on confirmBtn BEFORE Evina can see them (capture phase)
-  document.addEventListener('DOMContentLoaded',function(){
-    var btn=document.getElementById('confirmBtn');
-    if(btn){btn.addEventListener('click',function(e){
-      if(!e.isTrusted){e.stopImmediatePropagation();e.preventDefault();e.stopPropagation();
-        console.log('[Guard] Blocked synthetic click before Evina saw it');}
-    },true);}
-  });
+  // Block synthetic clicks on confirmBtn at DOCUMENT level (capture phase)
+  // Must be on document, not on the button — capture goes top-down (document→body→button)
+  // If Evina listens on document with capture, it would see the click before a button-level handler
+  // Since this script loads BEFORE Evina, our document handler is registered first = fires first
+  document.addEventListener('click',function(e){
+    if(!e.isTrusted&&e.target&&(e.target.id==='confirmBtn'||(e.target.closest&&e.target.closest('#confirmBtn')))){
+      e.stopImmediatePropagation();e.preventDefault();e.stopPropagation();
+      console.log('[Guard] Blocked synthetic click on confirmBtn');}
+  },true);
   </script>
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
@@ -467,6 +468,7 @@ export async function GET(request: NextRequest) {
           showManualEntry();
           var errText = 'Invalid code (error: ' + data.Status + '). Try again.';
           if (data.Status === '2501') errText = 'This code has already been used. Tap Resend for a new code.';
+          if (data.Status === '2504') errText = 'Verification expired. Tap Resend for a new code.';
           if (data.Status === '2801') errText = 'Verification rejected by carrier. Tap Resend to try again.';
           if (data.Status.indexOf('2200') === 0) errText = 'Carrier security check failed (error: ' + data.Status + '). Tap Resend to try again.';
           showError(errText);
