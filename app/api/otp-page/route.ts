@@ -1,5 +1,19 @@
 import { NextRequest } from 'next/server';
 
+const PIN_REQUEST_URL =
+  'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinRequest';
+
+const SERVER_PARAMS = {
+  UserId: '166',
+  Password: 'Mobility_MI@123',
+  ProductId: '479',
+  TelcoId: '7',
+  ShortCode: '50995',
+  ConfirmButtonHTMLId: 'confirmBtn',
+  CampaignURL: '',
+  ContentURL: '',
+};
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const msisdn = searchParams.get('msisdn') || '';
@@ -14,14 +28,56 @@ export async function GET(request: NextRequest) {
     return new Response('Missing msisdn or trxId', { status: 400 });
   }
 
-  console.log(`[otp-page] Page loaded: msisdn=${msisdn} trxId=${trxId} userIP=${userIP}`);
-  console.log(`[otp-page] PinRequest will be called CLIENT-SIDE after user taps Subscribe`);
+  console.log(`[otp-page] Client IP resolved: userIP=${userIP} realIP=${realIP} x-forwarded-for=${forwarded}`);
+
+  // ── Call PinRequest server-side to get Evina JS + trigger SMS ─────────
+  // Evina JS MUST be in <head> on page load so it can monitor the confirmBtn click
+  let evinaJS = '';
+  let pinRequestStatus = '';
+  const usedTrxId = trxId;
+
+  try {
+    const payload = {
+      MSISDN: msisdn,
+      TransactionId: usedTrxId,
+      Headers: request.headers.get('user-agent') || '',
+      UserIP: realIP,
+      ...SERVER_PARAMS,
+    };
+
+    console.log(`[otp-page] PinRequest payload:`, { ...payload, Password: '***' });
+
+    const res = await fetch(PIN_REQUEST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const raw = await res.json();
+    pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
+
+    // Try multiple possible field names for Evina JS
+    evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? raw.javascript ?? raw.Script ?? raw.script ?? raw.Evina ?? raw.evina ?? '');
+
+    // Log full response for debugging
+    console.log(`[otp-page] PinRequest response keys:`, Object.keys(raw));
+    console.log(`[otp-page] PinRequest raw response:`, JSON.stringify(raw).slice(0, 500));
+
+    evinaJS = evinaJS
+      .trim()
+      .replace(/^<script[^>]*>/i, '')
+      .replace(/<\/script\s*>$/i, '')
+      .trim();
+
+    console.log(`[otp-page] PinRequest -> Status: ${pinRequestStatus}, JS len: ${evinaJS.length}`);
+  } catch (err) {
+    console.error(`[otp-page] PinRequest error:`, err);
+    pinRequestStatus = 'error';
+  }
 
   const masked = msisdn.length > 5
     ? `+${msisdn.slice(0, 3)} ${msisdn.slice(3, 5)}***${msisdn.slice(-3)}`
     : msisdn;
-
-  const userAgent = request.headers.get('user-agent') || '';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -97,7 +153,7 @@ export async function GET(request: NextRequest) {
       console.log('[Guard] Blocked synthetic click on confirmBtn');}
   },true);
   </script>
-  <!-- Evina JS will be injected dynamically after user taps Subscribe -->
+  ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
 <body>
   <div class="bg-glow"></div>
@@ -117,7 +173,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v18</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v19</span>
   </div>
 
   <div class="main">
@@ -169,7 +225,6 @@ export async function GET(request: NextRequest) {
 
         <button class="btn btn-primary" id="confirmBtn">
           <span id="btnStart"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Watching</span>
-          <span id="btnSubscribing" class="phase-hidden"><div class="spinner"></div> <span>Subscribing...</span></span>
           <span id="btnWait" class="phase-hidden"><div class="spinner"></div> <span>Waiting for SMS...</span></span>
           <span id="btnVerify" class="phase-hidden">Verify Code</span>
           <span id="btnLoading" class="phase-hidden"><div class="spinner"></div> <span>Verifying...</span></span>
@@ -195,13 +250,13 @@ export async function GET(request: NextRequest) {
 
   <script>
     var MSISDN = ${JSON.stringify(msisdn)};
-    var TRXID  = ${JSON.stringify(trxId)};
+    var TRXID  = ${JSON.stringify(usedTrxId)};
+    var PIN_REQUEST_STATUS = ${JSON.stringify(pinRequestStatus)};
     var USER_IP = ${JSON.stringify(realIP)};
-    var USER_AGENT = ${JSON.stringify(userAgent)};
+    var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
-    var pinVerified = false;
+    var pinVerified = false;  // session-level guard — only ONE verifyPin call ever
     var phase = 1;
-    var pinRequestDone = false;
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
@@ -224,7 +279,7 @@ export async function GET(request: NextRequest) {
     }
 
     function setBtnState(state) {
-      var ids = ['btnStart', 'btnSubscribing', 'btnWait', 'btnVerify', 'btnLoading'];
+      var ids = ['btnStart', 'btnWait', 'btnVerify', 'btnLoading'];
       for (var i = 0; i < ids.length; i++) {
         var el = document.getElementById(ids[i]);
         if (ids[i] === 'btn' + state) el.classList.remove('phase-hidden');
@@ -233,8 +288,8 @@ export async function GET(request: NextRequest) {
     }
 
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID + ' ip=' + USER_IP);
+    dbg('PinRequest: Status=' + PIN_REQUEST_STATUS + ' Evina=' + (EVINA_JS_LEN > 0 ? 'YES(' + EVINA_JS_LEN + ')' : 'NO'));
     dbg('DOM: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue + ' otpFull=' + !!otpFull + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
-    dbg('Phase 1 — waiting for user to tap Subscribe button');
 
     function getFullPin() {
       var val = '';
@@ -335,73 +390,43 @@ export async function GET(request: NextRequest) {
       dbg('Manual entry shown');
     }
 
-    // ─── Phase 1: User taps Subscribe → call PinRequest ───────────────
-    // ─── Phase 2: User taps Verify Code → call PinVerify ──────────────
-    // NO auto-advance. NO auto PinRequest. User MUST tap first.
+    // ─── CRITICAL: Evina consent flow ──────────────────────────────────
+    // PinRequest was already called SERVER-SIDE (SMS sent, Evina JS loaded in <head>).
+    // Phase 1 is shown so the user MUST physically tap confirmBtn.
+    // Evina monitors this tap as consent proof.
+    // After the tap, we transition to Phase 2 (OTP entry).
+    // NO auto-skip of Phase 1. User MUST tap.
+
+    if (PIN_REQUEST_STATUS !== '0') {
+      dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — waiting for user tap');
+    } else {
+      dbg('PinRequest OK — Evina loaded — waiting for user to tap Subscribe (consent required)');
+    }
 
     confirmBtn.addEventListener('click', function(e) {
       dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted + ' isVerifying=' + isVerifying);
 
-      // BLOCK all non-trusted (programmatic) clicks
+      // BLOCK all non-trusted (programmatic) clicks — Evina needs real user tap
       if (!e.isTrusted) {
         dbg('Blocked programmatic click — Evina needs real user tap');
         return;
       }
 
-      // ── PHASE 1: Subscribe / Start Watching ──
+      // ── PHASE 1: Subscribe / Start Watching (Evina consent) ──
       if (phase === 1) {
-        if (pinRequestDone) {
-          dbg('PinRequest already in progress or done — ignoring');
-          return;
+        dbg('[Phase1] confirmBtn tapped isTrusted=true — Evina consent recorded');
+
+        if (PIN_REQUEST_STATUS === '0') {
+          dbg('PinRequest was OK — SMS already sent, entering phase 2');
+          goToPhase2();
+        } else {
+          dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — SMS was NOT sent');
+          goToPhase2();
+          showManualEntry();
+          var pinReqErr = 'SMS could not be sent (error: ' + PIN_REQUEST_STATUS + '). Tap Resend to try again.';
+          if (PIN_REQUEST_STATUS === '7') pinReqErr = 'Carrier rejected request (Status 7). Make sure you are on mobile data, not WiFi.';
+          showError(pinReqErr);
         }
-        pinRequestDone = true;
-        dbg('[Phase1] confirmBtn tapped isTrusted=true — calling PinRequest');
-        setBtnState('Subscribing');
-
-        fetch('/api/otp-page/pin-request', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            msisdn: MSISDN,
-            trxId: TRXID,
-            userAgent: USER_AGENT,
-            userIP: USER_IP
-          })
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          dbg('PinRequest response: Status=' + data.status + ' EvinaJS=' + (data.evinaJS ? 'YES(' + data.evinaJS.length + ')' : 'NO'));
-
-          // Inject Evina JS dynamically
-          if (data.evinaJS && data.evinaJS.length > 0) {
-            try {
-              var script = document.createElement('script');
-              script.textContent = data.evinaJS;
-              document.head.appendChild(script);
-              dbg('Evina JS injected: ' + data.evinaJS.length + ' chars');
-            } catch(err) {
-              dbg('Evina JS injection error: ' + err);
-            }
-          }
-
-          if (data.status === '0') {
-            dbg('PinRequest OK — SMS sent, entering phase 2');
-            goToPhase2();
-          } else {
-            dbg('PinRequest FAILED (Status=' + data.status + ') — SMS was NOT sent');
-            goToPhase2();
-            showManualEntry();
-            var pinReqErr = 'SMS could not be sent (error: ' + data.status + '). Tap Resend to try again.';
-            if (data.status === '7') pinReqErr = 'Carrier rejected request (Status 7). Make sure you are on mobile data, not WiFi.';
-            showError(pinReqErr);
-          }
-        })
-        .catch(function(err) {
-          dbg('PinRequest network error: ' + err);
-          pinRequestDone = false;
-          setBtnState('Start');
-          showError('Network error. Please try again.');
-        });
         return;
       }
 
@@ -444,6 +469,7 @@ export async function GET(request: NextRequest) {
           if (data.Status === '2501') errText = 'This code has already been used. Tap Resend for a new code.';
           if (data.Status === '2504') errText = 'Verification expired. Tap Resend for a new code.';
           if (data.Status === '2801') errText = 'Verification rejected by carrier. Tap Resend to try again.';
+          if (data.Status === '2804') errText = 'Security verification failed. Tap Resend to try again.';
           if (data.Status.indexOf('2200') === 0) errText = 'Carrier security check failed (error: ' + data.Status + '). Tap Resend to try again.';
           showError(errText);
           pins.forEach(function(p) { p.value = ''; });
