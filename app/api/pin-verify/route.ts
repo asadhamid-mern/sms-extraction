@@ -3,10 +3,18 @@ import { NextRequest, NextResponse } from 'next/server';
 const PIN_VERIFY_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinVerify';
 
+const SERVER_PARAMS = {
+  UserId: '166',
+  Password: 'Mobility_MI@123',
+  ProductId: '479',
+  TelcoId: '7',
+  ShortCode: '50995',
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { TransactionId, Pin } = body;
+    const { TransactionId, Pin, MSISDN } = body;
 
     if (!TransactionId || !Pin) {
       return NextResponse.json(
@@ -15,12 +23,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[PinVerify] Sending:', { TransactionId, Pin: '****' });
+    const payload: Record<string, string> = {
+      TransactionId,
+      Pin,
+      ...SERVER_PARAMS,
+    };
+    if (MSISDN) payload.MSISDN = MSISDN;
+
+    console.log('[PinVerify] Sending payload:', { ...payload, Password: '***' });
 
     const response = await fetch(PIN_VERIFY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ TransactionId, Pin }),
+      body: JSON.stringify(payload),
     });
 
     const text = await response.text();
