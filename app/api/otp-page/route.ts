@@ -18,72 +18,60 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const msisdn = searchParams.get('msisdn') || '';
   const trxId = searchParams.get('trxId') || '';
-  const userIP = searchParams.get('userIP') || '127.0.0.1';
+
+  // Get real client IP from the request itself (more reliable than query param)
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIP = forwarded ? forwarded.split(',')[0].trim() : '127.0.0.1';
+  const userIP = searchParams.get('userIP') || realIP;
 
   if (!msisdn || !trxId) {
     return new Response('Missing msisdn or trxId', { status: 400 });
   }
 
+  console.log(`[otp-page] Client IP resolved: userIP=${userIP} realIP=${realIP} x-forwarded-for=${forwarded}`);
+
   // ── Call PinRequest server-side to get Evina JS + trigger SMS ─────────
-  // Evina MUST run for carrier to accept PinVerify (error 2801 without it).
-  // We save real navigator.credentials BEFORE Evina loads so Web OTP works.
   let evinaJS = '';
   let pinRequestStatus = '';
-  let usedTrxId = trxId;
+  const usedTrxId = trxId;
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const payload = {
-        MSISDN: msisdn,
-        TransactionId: usedTrxId,
-        Headers: request.headers.get('user-agent') || '',
-        UserIP: userIP,
-        ...SERVER_PARAMS,
-      };
+  try {
+    const payload = {
+      MSISDN: msisdn,
+      TransactionId: usedTrxId,
+      Headers: request.headers.get('user-agent') || '',
+      UserIP: realIP,
+      ...SERVER_PARAMS,
+    };
 
-      console.log(`[otp-page] PinRequest attempt ${attempt}:`, { ...payload, Password: '***' });
+    console.log(`[otp-page] PinRequest payload:`, { ...payload, Password: '***' });
 
-      const res = await fetch(PIN_REQUEST_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+    const res = await fetch(PIN_REQUEST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-      const raw = await res.json();
-      pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
+    const raw = await res.json();
+    pinRequestStatus = String(raw.Status ?? raw.status ?? raw.STATUS ?? '');
 
-      // Try multiple possible field names for Evina JS
-      evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? raw.javascript ?? raw.Script ?? raw.script ?? raw.Evina ?? raw.evina ?? '');
+    // Try multiple possible field names for Evina JS
+    evinaJS = String(raw.JS ?? raw.js ?? raw.Javascript ?? raw.javascript ?? raw.Script ?? raw.script ?? raw.Evina ?? raw.evina ?? '');
 
-      // Log all response fields for debugging
-      console.log(`[otp-page] Attempt ${attempt} raw response keys:`, Object.keys(raw));
-      console.log(`[otp-page] Attempt ${attempt} raw response:`, JSON.stringify(raw).slice(0, 500));
+    // Log full response for debugging
+    console.log(`[otp-page] PinRequest response keys:`, Object.keys(raw));
+    console.log(`[otp-page] PinRequest raw response:`, JSON.stringify(raw).slice(0, 500));
 
-      evinaJS = evinaJS
-        .trim()
-        .replace(/^<script[^>]*>/i, '')
-        .replace(/<\/script\s*>$/i, '')
-        .trim();
+    evinaJS = evinaJS
+      .trim()
+      .replace(/^<script[^>]*>/i, '')
+      .replace(/<\/script\s*>$/i, '')
+      .trim();
 
-      console.log(`[otp-page] Attempt ${attempt} -> Status: ${pinRequestStatus}, JS len: ${evinaJS.length}`);
-
-      // If Status=0, SMS was sent — STOP retrying regardless of Evina
-      // Retrying with a new trxId would cause trxId mismatch with the OTP (error 2501)
-      if (pinRequestStatus === '0') break;
-
-      // Only retry with new trxId if PinRequest FAILED (SMS not sent)
-      if (attempt < 3) {
-        usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    } catch (err) {
-      console.error(`[otp-page] PinRequest attempt ${attempt} error:`, err);
-      pinRequestStatus = 'error';
-      if (attempt < 3) {
-        usedTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    }
+    console.log(`[otp-page] PinRequest -> Status: ${pinRequestStatus}, JS len: ${evinaJS.length}`);
+  } catch (err) {
+    console.error(`[otp-page] PinRequest error:`, err);
+    pinRequestStatus = 'error';
   }
 
   const masked = msisdn.length > 5
@@ -187,7 +175,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v15</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v16</span>
   </div>
 
   <div class="main">
@@ -266,6 +254,7 @@ export async function GET(request: NextRequest) {
     var MSISDN = ${JSON.stringify(msisdn)};
     var TRXID  = ${JSON.stringify(usedTrxId)};
     var PIN_REQUEST_STATUS = ${JSON.stringify(pinRequestStatus)};
+    var USER_IP = ${JSON.stringify(realIP)};
     var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
     var pinVerified = false;  // session-level guard — only ONE verifyPin call ever
@@ -300,7 +289,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID);
+    dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID + ' ip=' + USER_IP);
     dbg('PinRequest: Status=' + PIN_REQUEST_STATUS + ' Evina=' + (EVINA_JS_LEN > 0 ? 'YES(' + EVINA_JS_LEN + ')' : 'NO'));
     dbg('DOM: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue + ' otpFull=' + !!otpFull + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
 
@@ -421,7 +410,7 @@ export async function GET(request: NextRequest) {
       goToPhase2();
       showManualEntry();
       var pinReqErr = 'SMS could not be sent (error: ' + PIN_REQUEST_STATUS + '). Tap Resend to try again.';
-      if (PIN_REQUEST_STATUS === '7') pinReqErr = 'Service temporarily unavailable. Please wait a moment and tap Resend.';
+      if (PIN_REQUEST_STATUS === '7') pinReqErr = 'Carrier rejected request (Status 7). Make sure you are on mobile data, not WiFi.';
       showError(pinReqErr);
     }
 
@@ -455,8 +444,7 @@ export async function GET(request: NextRequest) {
       fetch('/api/pin-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Match telco sample: only TransactionId + Pin (see /api/pin-verify)
-        body: JSON.stringify({ TransactionId: TRXID, Pin: pin })
+        body: JSON.stringify({ TransactionId: TRXID, Pin: pin, MSISDN: MSISDN })
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {

@@ -3,53 +3,24 @@ import { NextRequest, NextResponse } from 'next/server';
 const PIN_VERIFY_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinVerify';
 
-// Telco sample only shows { TransactionId, Pin }. Extra fields can invalidate the session (2504).
-const SERVER_PARAMS = {
-  UserId: '166',
-  Password: 'Mobility_MI@123',
-  ProductId: '479',
-  TelcoId: '7',
-  ShortCode: '50995',
-};
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { TransactionId, Pin, MSISDN } = body;
+    const { TransactionId, Pin } = body;
 
-    const tx = String(TransactionId ?? '').trim();
-    const pinDigits = String(Pin ?? '').replace(/\D/g, '').slice(0, 8);
-
-    if (!tx || !pinDigits) {
+    if (!TransactionId || !Pin) {
       return NextResponse.json(
         { error: 'TransactionId and Pin are required' },
         { status: 400 }
       );
     }
 
-    const includeExtra = process.env.PIN_VERIFY_INCLUDE_SERVER_PARAMS === 'true';
-
-    const payload: Record<string, string> = includeExtra
-      ? {
-          TransactionId: tx,
-          Pin: pinDigits,
-          ...SERVER_PARAMS,
-          ...(MSISDN ? { MSISDN: String(MSISDN) } : {}),
-        }
-      : {
-          TransactionId: tx,
-          Pin: pinDigits,
-        };
-
-    console.log('[PinVerify] Sending payload:', {
-      ...payload,
-      ...(includeExtra ? { Password: '***' } : {}),
-    });
+    console.log('[PinVerify] Sending:', { TransactionId, Pin: '****' });
 
     const response = await fetch(PIN_VERIFY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ TransactionId, Pin }),
     });
 
     const text = await response.text();
