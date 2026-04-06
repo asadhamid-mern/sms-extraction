@@ -9,7 +9,7 @@ const SERVER_PARAMS = {
   ProductId: '479',
   TelcoId: '7',
   ShortCode: '50995',
-  ConfirmButtonHTMLId: 'confirmBtn',
+  ConfirmButtonHTMLId: 'Confirm',
   CampaignURL: '',
   ContentURL: '',
 };
@@ -26,8 +26,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const normalizedMsisdn =
+      msisdn.startsWith('965') || msisdn.startsWith('+965')
+        ? msisdn.replace(/^\+/, '')
+        : `965${msisdn}`;
+
     const payload = {
-      MSISDN: msisdn,
+      MSISDN: normalizedMsisdn,
       TransactionId: trxId,
       Headers: userAgent || '',
       UserIP: userIP || '127.0.0.1',

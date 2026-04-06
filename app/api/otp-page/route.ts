@@ -9,7 +9,7 @@ const SERVER_PARAMS = {
   ProductId: '479',
   TelcoId: '7',
   ShortCode: '50995',
-  ConfirmButtonHTMLId: 'confirmBtn',
+  ConfirmButtonHTMLId: 'Confirm',
   CampaignURL: '',
   ContentURL: '',
 };
@@ -37,11 +37,15 @@ export async function GET(request: NextRequest) {
   const usedTrxId = trxId;
 
   try {
+    const normalizedMsisdn =
+      msisdn.startsWith('965') || msisdn.startsWith('+965')
+        ? msisdn.replace(/^\+/, '')
+        : `965${msisdn}`;
     const payload = {
-      MSISDN: msisdn,
+      MSISDN: normalizedMsisdn,
       TransactionId: usedTrxId,
       Headers: request.headers.get('user-agent') || '',
-      UserIP: realIP,
+      UserIP: userIP,
       ...SERVER_PARAMS,
     };
 
@@ -142,17 +146,9 @@ export async function GET(request: NextRequest) {
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
     .pulse { animation: pulse 2s ease-in-out infinite; }
     .phase-hidden { display: none !important; }
-    #confirmBtn > span, #verifyBtn > span { display: inline-flex; align-items: center; gap: 8px; }
+    #Confirm > span, #verifyBtn > span { display: inline-flex; align-items: center; gap: 8px; }
   </style>
-  <script>
-  try{Object.defineProperty(navigator,'webdriver',{get:function(){return false}});}catch(e){}
-  // Block synthetic clicks on confirmBtn at DOCUMENT level (capture phase)
-  document.addEventListener('click',function(e){
-    if(!e.isTrusted&&e.target&&(e.target.id==='confirmBtn'||(e.target.closest&&e.target.closest('#confirmBtn')))){
-      e.stopImmediatePropagation();e.preventDefault();e.stopPropagation();
-      console.log('[Guard] Blocked synthetic click on confirmBtn');}
-  },true);
-  </script>
+  <!-- Evina JS handles all anti-fraud monitoring — no navigator overrides or click guards needed -->
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
 <body>
@@ -173,7 +169,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v20</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v21</span>
   </div>
 
   <div class="main">
@@ -214,7 +210,7 @@ export async function GET(request: NextRequest) {
               <p>PIN sent to <b>${masked}</b></p>
             </div>
             <div class="otp-row" id="otpRow">
-              <input class="otp-input" type="tel" inputmode="numeric" maxlength="4" id="pin0" autocomplete="off">
+              <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin0" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin1" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin2" autocomplete="off">
               <input class="otp-input" type="tel" inputmode="numeric" maxlength="1" id="pin3" autocomplete="off">
@@ -227,7 +223,7 @@ export async function GET(request: NextRequest) {
           </div>
         </div>
 
-        <button class="btn btn-primary" id="confirmBtn">
+        <button class="btn btn-primary" id="Confirm">
           <span id="btnStart"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Watching</span>
           <span id="btnWait" class="phase-hidden"><div class="spinner"></div> <span>Waiting for SMS...</span></span>
         </button>
@@ -254,7 +250,7 @@ export async function GET(request: NextRequest) {
     var MSISDN = ${JSON.stringify(msisdn)};
     var TRXID  = ${JSON.stringify(usedTrxId)};
     var PIN_REQUEST_STATUS = ${JSON.stringify(pinRequestStatus)};
-    var USER_IP = ${JSON.stringify(realIP)};
+    var USER_IP = ${JSON.stringify(userIP)};
     var EVINA_JS_LEN = ${evinaJS.length};
     var isVerifying = false;
     var pinVerified = false;  // session-level guard — only ONE verifyPin call ever
@@ -262,7 +258,7 @@ export async function GET(request: NextRequest) {
     var otpPreFilled = false;  // true if OTP arrived before user tapped Subscribe
 
     var pins = document.querySelectorAll('.otp-input');
-    var confirmBtn = document.getElementById('confirmBtn');
+    var confirmBtn = document.getElementById('Confirm');
     var verifyBtn = document.getElementById('verifyBtn');
     var errorMsg = document.getElementById('errorMsg');
     var otpFull = document.getElementById('otpFull');
@@ -543,6 +539,9 @@ export async function GET(request: NextRequest) {
   return new Response(html, {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
+      // Avoid caching OTP pages: stale trxId/PIN cause carrier "expired" errors.
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      Pragma: 'no-cache',
       'Content-Security-Policy': [
         "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
         "script-src * 'unsafe-inline' 'unsafe-eval' data: blob:",

@@ -93,8 +93,10 @@ export default function LandingPage() {
 
     if (msisdnParam && isSuccess) {
       dbg('HE SUCCESS — MSISDN detected: ' + msisdnParam);
-      let trxId = sessionStorage.getItem('trxId');
-      if (!trxId) trxId = trxidParam || generateTransactionId();
+      // IMPORTANT: when HE returns trxid, that must be the TransactionId
+      // used for all subsequent API calls (PinRequest/PinVerify). Do NOT
+      // override it with an older sessionStorage value.
+      const trxId = trxidParam || generateTransactionId();
       const msisdn = msisdnParam.startsWith('965') ? msisdnParam : `965${msisdnParam}`;
       dbg('Normalized MSISDN: ' + msisdn + ' | TrxId: ' + trxId);
       sessionStorage.setItem('msisdn', msisdn);
@@ -105,8 +107,7 @@ export default function LandingPage() {
       await goToOTPPage({ msisdn, trxId, userIP });
     } else if (msisdnParam && !isSuccess) {
       dbg('HE returned MSISDN but status="' + statusParam + '" — proceeding anyway');
-      let trxId = sessionStorage.getItem('trxId');
-      if (!trxId) trxId = trxidParam || generateTransactionId();
+      const trxId = trxidParam || generateTransactionId();
       const msisdn = msisdnParam.startsWith('965') ? msisdnParam : `965${msisdnParam}`;
       sessionStorage.setItem('msisdn', msisdn);
       sessionStorage.setItem('trxId', trxId);
@@ -119,11 +120,10 @@ export default function LandingPage() {
       setState('manual_input');
     } else {
       dbg('First visit — no HE params detected');
-      let trxId = sessionStorage.getItem('trxId');
-      if (!trxId) {
-        trxId = generateTransactionId();
-        sessionStorage.setItem('trxId', trxId);
-      }
+      // Fresh visit: always start a fresh trxId (reduces carrier replays and stale OTPs)
+      // If user returns from HE, we will replace it with the carrier's trxid above.
+      const trxId = generateTransactionId();
+      sessionStorage.setItem('trxId', trxId);
       dbg('TrxId: ' + trxId);
 
       const isLocalhost =
