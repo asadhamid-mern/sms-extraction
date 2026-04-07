@@ -8,7 +8,7 @@ const DEFAULT_CONTENT_URL = 'https://www.xoomsports.com';
 export default function ThankYouPage() {
   const router = useRouter();
   const [show, setShow] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(4);
   const [contentUrl, setContentUrl] = useState(DEFAULT_CONTENT_URL);
 
   useEffect(() => {
@@ -55,8 +55,10 @@ export default function ThankYouPage() {
 
   return (
     <div className="min-h-screen bg-[#0b0e14] flex flex-col relative overflow-hidden">
-      {/* Background effects */}
       <div className="absolute inset-0 pointer-events-none">
+        <img src="/football.png" alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0b0e14]/55 via-[#0b0e14]/85 to-[#0b0e14]" />
+        <div className="absolute inset-0 shadow-[inset_0_0_100px_rgba(0,0,0,0.5)]" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#e2383a]/6 rounded-full blur-[100px]" />
         <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-[400px] h-[200px] bg-green-500/5 rounded-full blur-[80px]" />
       </div>
@@ -80,7 +82,7 @@ export default function ThankYouPage() {
       {/* Content */}
       <div className="flex-1 flex items-center justify-center px-5 pb-8 relative z-10">
         <div className={`w-full max-w-sm transition-all duration-500 ${show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-          <div className="bg-[#141923] rounded-2xl p-8 border border-white/5 text-center">
+          <div className="bg-[#141923]/85 backdrop-blur-xl rounded-2xl p-8 border border-white/10 text-center shadow-2xl shadow-black/40">
             {/* Success icon */}
             <div className="flex justify-center mb-6">
               <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center relative">

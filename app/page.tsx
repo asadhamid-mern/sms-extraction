@@ -15,6 +15,8 @@ export default function LandingPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [debugLines, setDebugLines] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  /** Technical details link only when ?debug=1 (keeps production UI clean). */
+  const [debugPanelEnabled, setDebugPanelEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const initialized = useRef(false);
 
@@ -39,7 +41,12 @@ export default function LandingPage() {
         sessionStorage.setItem('msisdn', msisdn);
         sessionStorage.setItem('trxId', trxId);
         await updateTransactionStatus(trxId, 'pin_requested');
-        window.location.href = `/api/otp-page?msisdn=${encodeURIComponent(msisdn)}&trxId=${encodeURIComponent(trxId)}&userIP=${encodeURIComponent(userIP)}`;
+        const dbg =
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('debug') === '1'
+            ? '&debug=1'
+            : '';
+        window.location.href = `/api/otp-page?msisdn=${encodeURIComponent(msisdn)}&trxId=${encodeURIComponent(trxId)}&userIP=${encodeURIComponent(userIP)}${dbg}`;
       } catch (err) {
         dbg('Navigation error: ' + String(err));
         setErrorMsg('Network error. Please check your connection and try again.');
@@ -158,6 +165,13 @@ export default function LandingPage() {
   }, [goToOTPPage, dbg]);
 
   useEffect(() => {
+    setDebugPanelEnabled(
+      typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1'
+    );
+  }, []);
+
+  useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
     initFlow();
@@ -203,9 +217,10 @@ export default function LandingPage() {
     initFlow();
   }
 
-  const debugPanel = (
+  const debugPanel = debugPanelEnabled ? (
     <div className="mt-4 w-full">
       <button
+        type="button"
         onClick={() => setShowDebug(v => !v)}
         className="text-xs text-white/20 underline w-full text-center"
       >
@@ -217,7 +232,7 @@ export default function LandingPage() {
         </pre>
       )}
     </div>
-  );
+  ) : null;
 
   // ── Error state ──────────────────────────────────────────────────────────
   if (state === 'error') {
@@ -426,7 +441,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#0b0e14] flex flex-col items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
         <img src="/football.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-[#0b0e14]/85" />
+        <div className="absolute inset-0 bg-[#0b0e14]/72" />
       </div>
 
       <div className="w-full max-w-sm relative z-10">
