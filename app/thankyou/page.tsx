@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FootballCollageBackdrop } from '@/components/FootballCollageBackdrop';
 
-const DEFAULT_CONTENT_URL = 'https://www.xoomsports.com';
+const DEFAULT_CONTENT_URL = 'https://www.goalzzz.net/';
 
 export default function ThankYouPage() {
   const router = useRouter();
@@ -70,7 +70,7 @@ export default function ThankYouPage() {
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
           </div>
-          <span className="text-white font-extrabold text-lg tracking-tight">XOOM<span className="text-[#e2383a]">SPORTS</span></span>
+          <span className="text-white font-extrabold text-lg tracking-tight">GOAL<span className="text-[#e2383a]">NOWX</span></span>
         </div>
         <div className="flex items-center gap-1.5 bg-white/5 rounded-full px-3 py-1.5">
           <div className="w-2 h-2 bg-green-500 rounded-full" />
@@ -96,7 +96,7 @@ export default function ThankYouPage() {
               You&apos;re All Set!
             </h1>
             <p className="text-white/40 text-sm leading-relaxed mb-6">
-              Your premium subscription is now active.<br/>Enjoy unlimited live football streaming.
+              Your premium subscription is now active.<br/>Enjoy unlimited live football updates.
             </p>
 
             {/* Features unlocked */}

@@ -280,7 +280,7 @@ function LandingPageContent() {
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
             </div>
-            <span className="text-white font-extrabold text-lg tracking-tight">XOOM<span className="text-[#e2383a]">SPORTS</span></span>
+            <span className="text-white font-extrabold text-lg tracking-tight">GOAL<span className="text-[#e2383a]">NOWX</span></span>
           </div>
           <div className="flex items-center gap-1.5 bg-white/5 rounded-full px-3 py-1.5">
             <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
@@ -443,7 +443,7 @@ function LandingPageContent() {
           </svg>
         </div>
         <span className="text-white font-extrabold text-lg tracking-tight drop-shadow-md">
-          XOOM<span className="text-[#e2383a]">SPORTS</span>
+          GOAL<span className="text-[#e2383a]">NOWX</span>
         </span>
       </div>
 

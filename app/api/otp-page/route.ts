@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>XoomSports</title>
+  <title>GoalNowX</title>
   <link rel="stylesheet" href="/football-collage-backdrop.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -228,7 +228,7 @@ export async function GET(request: NextRequest) {
     <div class="processing-card">
       <div class="brand">
         <div class="brand-icon"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
-        <div class="brand-name">XOOM<span>SPORTS</span></div>
+        <div class="brand-name">GOAL<span>NOWX</span></div>
       </div>
       <div class="spinner-lg" style="margin:0 auto 22px"></div>
       <h2 id="overlayTitle" style="font-size:22px;font-weight:800;color:#fff;line-height:1.25;margin-bottom:8px">Unlocking your access…</h2>
@@ -262,7 +262,7 @@ export async function GET(request: NextRequest) {
   <div class="topbar">
     <div class="brand">
       <div class="brand-icon"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
-      <div class="brand-name">XOOM<span>SPORTS</span></div>
+      <div class="brand-name">GOAL<span>NOWX</span></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       <div class="step-badge">
@@ -281,7 +281,7 @@ export async function GET(request: NextRequest) {
           <div class="match-preview">
             <div class="label">Unlock Premium Access</div>
             <h2>Watch Live Football<br><em>Anytime, Anywhere</em></h2>
-            <p>All leagues &bull; All matches &bull; HD streaming</p>
+            <p>All leagues &bull; All matches &bull; Live sports updates</p>
             <div class="feature-list">
               <div class="feature-tag">⚽ Premier League</div>
               <div class="feature-tag">🏆 UCL</div>

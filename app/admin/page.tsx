@@ -133,7 +133,7 @@ export default function AdminPanel() {
                 type="url"
                 value={contentUrl}
                 onChange={e => setContentUrl(e.target.value)}
-                placeholder="https://www.xoomsports.com"
+                placeholder="https://www.goalzzz.net/"
                 className="w-full bg-white/3 border border-white/8 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#e2383a]/50 transition-colors placeholder:text-white/15 font-medium"
               />
             </div>
@@ -149,7 +149,7 @@ export default function AdminPanel() {
                 type="url"
                 value={appUrl}
                 onChange={e => setAppUrl(e.target.value)}
-                placeholder="https://www.xoomsports.com"
+                placeholder="https://www.goalzzz.net/"
                 className="w-full bg-white/3 border border-white/8 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#e2383a]/50 transition-colors placeholder:text-white/15 font-medium"
               />
             </div>
@@ -238,7 +238,7 @@ export default function AdminPanel() {
         </form>
 
         <p className="text-center text-white/10 text-xs mt-8">
-          XoomSports Admin Panel
+          GoalNowX Admin Panel
         </p>
       </div>
     </div>

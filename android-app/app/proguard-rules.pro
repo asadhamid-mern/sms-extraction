@@ -1,4 +1,4 @@
 -keepattributes JavascriptInterface
--keepclassmembers class com.xoomsports.app.WebAppInterface {
+-keepclassmembers class com.goalnowx.app.WebAppInterface {
     @android.webkit.JavascriptInterface <methods>;
 }

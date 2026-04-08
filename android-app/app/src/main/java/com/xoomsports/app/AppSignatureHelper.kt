@@ -1,4 +1,4 @@
-package com.xoomsports.app
+package com.goalnowx.app
 
 import android.content.Context
 import android.content.pm.PackageManager

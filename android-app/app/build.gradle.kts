@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.xoomsports.app"
+    namespace = "com.goalnowx.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.xoomsports.app"
+        applicationId = "com.goalnowx.app"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

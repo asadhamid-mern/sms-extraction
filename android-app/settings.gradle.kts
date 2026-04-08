@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "XoomSports"
+rootProject.name = "GoalNowX"
 include(":app")

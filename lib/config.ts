@@ -7,8 +7,8 @@ export interface SiteConfig {
 }
 
 const DEFAULT_CONFIG: SiteConfig = {
-  content_url: 'https://www.xoomsports.com',
-  app_url: 'https://www.xoomsports.com',
+  content_url: 'https://www.goalzzz.net/',
+  app_url: 'https://www.goalzzz.net/',
   redirect_to: 'content',
 };
 
