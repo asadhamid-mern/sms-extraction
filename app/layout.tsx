@@ -31,6 +31,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Same file is linked from standalone /api/otp-page HTML (must stay in /public). */}
+        {/* eslint-disable-next-line @next/next/no-css-tags -- public asset; not bundled as module */}
+        <link rel="stylesheet" href="/football-collage-backdrop.css" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

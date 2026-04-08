@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { FootballCollageBackdrop } from '@/components/FootballCollageBackdrop';
 
 const DEFAULT_CONTENT_URL = 'https://www.xoomsports.com';
 
@@ -55,10 +56,8 @@ export default function ThankYouPage() {
 
   return (
     <div className="min-h-screen bg-[#0b0e14] flex flex-col relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none">
-        <img src="/football.png" alt="" className="absolute inset-0 w-full h-full object-cover object-center" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0b0e14]/55 via-[#0b0e14]/85 to-[#0b0e14]" />
-        <div className="absolute inset-0 shadow-[inset_0_0_100px_rgba(0,0,0,0.5)]" />
+      <FootballCollageBackdrop scrim="heavy" />
+      <div className="pointer-events-none absolute inset-0 z-[1]">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#e2383a]/6 rounded-full blur-[100px]" />
         <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-[400px] h-[200px] bg-green-500/5 rounded-full blur-[80px]" />
       </div>

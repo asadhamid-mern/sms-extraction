@@ -19,30 +19,33 @@ export default function AdminPanel() {
   const [appUrl, setAppUrl] = useState('');
   const [redirectTo, setRedirectTo] = useState<'content' | 'thankyou'>('content');
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  async function fetchConfig() {
-    try {
-      const res = await fetch('/api/admin/config');
-      const data = await res.json();
-      setConfig(data);
-      setContentUrl(data.content_url);
-      setAppUrl(data.app_url);
-      setRedirectTo(data.redirect_to);
-    } catch {
-      showMessage('Failed to load config', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function showMessage(msg: string, type: 'success' | 'error') {
     setMessage(msg);
     setMessageType(type);
     setTimeout(() => setMessage(''), 4000);
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/config');
+        const data = await res.json();
+        if (cancelled) return;
+        setConfig(data);
+        setContentUrl(data.content_url);
+        setAppUrl(data.app_url);
+        setRedirectTo(data.redirect_to);
+      } catch {
+        if (!cancelled) showMessage('Failed to load config', 'error');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
