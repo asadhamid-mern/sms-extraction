@@ -18,6 +18,12 @@ class WebAppInterface(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun enableSmsConsent() {
+        // Edge-case fallback only: allow Android consent dialog for OTP read.
+        activity.enableSmsConsentFallback()
+    }
+
+    @JavascriptInterface
     fun onSubscriptionComplete(contentUrl: String) {
         // Subscription done - load content page
         activity.runOnUiThread {

