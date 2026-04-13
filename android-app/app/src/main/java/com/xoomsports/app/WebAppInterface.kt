@@ -12,9 +12,10 @@ class WebAppInterface(private val activity: MainActivity) {
 
     @JavascriptInterface
     fun onPinRequested() {
-        // PinRequest was called, OTP SMS is being sent
-        // SMS Retriever is already listening
-        activity.startSmsRetriever()
+        // PinRequest path started after trusted tap.
+        // Re-arm both listeners immediately so fast OTP deliveries are not missed.
+        activity.restartSmsRetrieverNow()
+        activity.enableSmsConsentFallback()
     }
 
     @JavascriptInterface

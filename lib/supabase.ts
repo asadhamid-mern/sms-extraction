@@ -30,12 +30,18 @@ export async function logTransaction(
   const client = getClient();
   if (!client) return;
   try {
+    const payload: Record<string, unknown> = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    };
+    // Remove undefined fields so Supabase doesn't complain
+    for (const key of Object.keys(payload)) {
+      if (payload[key] === undefined) delete payload[key];
+    }
+
     const { error } = await client
       .from('subscriptions')
-      .upsert(
-        { ...data, updated_at: new Date().toISOString() },
-        { onConflict: 'transaction_id' }
-      );
+      .upsert(payload, { onConflict: 'transaction_id' });
 
     if (error) console.error('[Supabase] logTransaction error:', error);
   } catch (e) {

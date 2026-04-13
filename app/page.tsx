@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { generateTransactionId } from '@/lib/utils';
+import { generateTransactionId, newVasTransactionId } from '@/lib/utils';
 import { logTransaction, updateTransactionStatus } from '@/lib/supabase';
 import { FootballCollageBackdrop } from '@/components/FootballCollageBackdrop';
 
@@ -60,6 +60,38 @@ function LandingPageContent() {
     [dbg]
   );
 
+  const goToVasOtpPage = useCallback(
+    async ({
+      msisdn,
+      trxId,
+      userIP,
+    }: {
+      msisdn: string;
+      trxId: string;
+      userIP: string;
+    }) => {
+      try {
+        sessionStorage.setItem('msisdn', msisdn);
+        sessionStorage.setItem('trxId', trxId);
+        await updateTransactionStatus(trxId, 'pin_requested');
+        const q =
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('debug') === '1'
+            ? '&debug=1'
+            : '';
+        const msisdnQ = msisdn ? `&msisdn=${encodeURIComponent(msisdn)}` : '';
+        const telcoId = sessionStorage.getItem('telcoId');
+        const telcoQ = telcoId ? `&telcoId=${encodeURIComponent(telcoId)}` : '';
+        window.location.href = `/api/vas/otp-page?trxId=${encodeURIComponent(trxId)}&userIP=${encodeURIComponent(userIP)}${msisdnQ}${telcoQ}${q}`;
+      } catch (err) {
+        dbg('VAS navigation error: ' + String(err));
+        setErrorMsg('Network error. Please check your connection and try again.');
+        setState('error');
+      }
+    },
+    [dbg]
+  );
+
   const initFlow = useCallback(async () => {
     dbg('Landing page loaded');
     dbg('URL: ' + window.location.href);
@@ -86,6 +118,62 @@ function LandingPageContent() {
         (trxidParam || 'NONE')
     );
 
+    let subscriptionProvider: 'kuwait_dcb' | 'vas_universal' = 'kuwait_dcb';
+    try {
+      const cfgRes = await fetch('/api/admin/config');
+      const cfgJson = await cfgRes.json();
+      if (cfgJson.subscription_provider === 'vas_universal') {
+        subscriptionProvider = 'vas_universal';
+        dbg('Subscription provider: VAS universal');
+      }
+    } catch {
+      dbg('Config fetch failed — default kuwait_dcb');
+    }
+
+    if (getParam('manual') === '1') {
+      dbg('Manual entry requested (?manual=1)');
+      setState('manual_input');
+      return;
+    }
+
+    // ── Smart routing: detect country and flow type ──
+    // Skip country detection if we already have HE/carrier callback params
+    if (!msisdnParam && !statusParam) {
+      try {
+        const countryRes = await fetch('/api/detect-country');
+        const countryData = await countryRes.json();
+        dbg('Country detected: ' + countryData.countryCode + ' (' + countryData.countryName + ') flow=' + countryData.flowType);
+
+        if (countryData.flowType === 'global' && countryData.countryEnabled) {
+          dbg('Global flow country — redirecting to Google Sign-In');
+          window.location.href = '/auth/google';
+          return;
+        }
+
+        if (countryData.flowType === 'disabled' || (!countryData.countryEnabled && countryData.countryCode)) {
+          dbg('Country disabled (' + countryData.countryCode + ')');
+          setErrorMsg('This service is not available in your region.');
+          setState('error');
+          return;
+        }
+
+        if (countryData.outsideSchedule) {
+          dbg('Outside schedule for ' + countryData.telcoName);
+          setErrorMsg('This service is temporarily unavailable. Please try again later.');
+          setState('error');
+          return;
+        }
+
+        // If country has a specific telco, store it for the VAS flow
+        if (countryData.telcoId) {
+          sessionStorage.setItem('telcoId', countryData.telcoId);
+          dbg('Telco resolved: ' + countryData.telcoName + ' (id=' + countryData.telcoId + ')');
+        }
+      } catch {
+        dbg('Country detection failed — continuing with default flow');
+      }
+    }
+
     const userAgent = navigator.userAgent;
     const isSuccess = statusParam?.toLowerCase() === 'success';
 
@@ -100,6 +188,70 @@ function LandingPageContent() {
         dbg('Failed to get IP: ' + String(e));
         return '127.0.0.1';
       }
+    }
+
+    // ── VAS Platform (multi-telco) — does not use Kuwait HE on first launch ──
+    if (subscriptionProvider === 'vas_universal') {
+      if (msisdnParam && isSuccess) {
+        dbg('VAS: HE SUCCESS — MSISDN detected: ' + msisdnParam);
+        const trxId = trxidParam || newVasTransactionId();
+        const msisdn = msisdnParam.startsWith('965')
+          ? msisdnParam.replace(/^\+/, '')
+          : `965${msisdnParam.replace(/^\+/, '')}`;
+        sessionStorage.setItem('msisdn', msisdn);
+        sessionStorage.setItem('trxId', trxId);
+        window.history.replaceState({}, '', '/');
+        const userIP = await getUserIP();
+        await goToVasOtpPage({ msisdn, trxId, userIP });
+        return;
+      }
+      if (msisdnParam && !isSuccess) {
+        dbg('VAS: HE returned MSISDN, proceeding');
+        const trxId = trxidParam || newVasTransactionId();
+        const msisdn = msisdnParam.startsWith('965')
+          ? msisdnParam.replace(/^\+/, '')
+          : `965${msisdnParam.replace(/^\+/, '')}`;
+        sessionStorage.setItem('msisdn', msisdn);
+        sessionStorage.setItem('trxId', trxId);
+        window.history.replaceState({}, '', '/');
+        const userIP = await getUserIP();
+        await goToVasOtpPage({ msisdn, trxId, userIP });
+        return;
+      }
+      if (statusParam && !msisdnParam) {
+        dbg('VAS: HE failed — manual input');
+        setState('manual_input');
+        return;
+      }
+      dbg('VAS: first visit — pinrequest via server (IP-based telco)');
+      const trxId = newVasTransactionId();
+      sessionStorage.setItem('trxId', trxId);
+
+      const isLocalhost =
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname.startsWith('192.168.') ||
+        window.location.hostname.startsWith('10.');
+
+      if (isLocalhost) {
+        dbg('VAS: localhost — manual MSISDN');
+        setState('manual_input');
+        return;
+      }
+
+      const userIP = await getUserIP();
+      logTransaction({
+        transaction_id: trxId,
+        msisdn: '',
+        status: 'initiated',
+        user_ip: userIP,
+        user_agent: userAgent,
+      }).catch(() => {});
+      const q = debugPanelEnabled ? '&debug=1' : '';
+      const storedTelcoId = sessionStorage.getItem('telcoId');
+      const telcoQ = storedTelcoId ? `&telcoId=${encodeURIComponent(storedTelcoId)}` : '';
+      window.location.href = `/api/vas/otp-page?trxId=${encodeURIComponent(trxId)}&userIP=${encodeURIComponent(userIP)}${telcoQ}${q}`;
+      return;
     }
 
     if (msisdnParam && isSuccess) {
@@ -166,7 +318,7 @@ function LandingPageContent() {
         }).catch(() => {});
       });
     }
-  }, [goToOTPPage, dbg]);
+  }, [goToOTPPage, goToVasOtpPage, dbg, debugPanelEnabled]);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -189,7 +341,15 @@ function LandingPageContent() {
     } catch {}
 
     const userAgent = navigator.userAgent;
-    const trxId = sessionStorage.getItem('trxId') || generateTransactionId();
+    let provider: 'kuwait_dcb' | 'vas_universal' = 'kuwait_dcb';
+    try {
+      const cfg = await fetch('/api/admin/config').then(r => r.json());
+      if (cfg.subscription_provider === 'vas_universal') provider = 'vas_universal';
+    } catch {}
+
+    const trxId =
+      sessionStorage.getItem('trxId') ||
+      (provider === 'vas_universal' ? newVasTransactionId() : generateTransactionId());
     sessionStorage.setItem('trxId', trxId);
 
     const msisdn = manualNumber.startsWith('965') ? manualNumber : `965${manualNumber}`;
@@ -205,7 +365,11 @@ function LandingPageContent() {
       });
     } catch {}
 
-    await goToOTPPage({ msisdn, trxId, userIP });
+    if (provider === 'vas_universal') {
+      await goToVasOtpPage({ msisdn, trxId, userIP });
+    } else {
+      await goToOTPPage({ msisdn, trxId, userIP });
+    }
     setIsSubmitting(false);
   }
 

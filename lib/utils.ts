@@ -6,6 +6,14 @@ export function generateTransactionId(): string {
     .slice(0, 16);
 }
 
+/** VAS guide recommends UUID for adAgencyCampaignTransactionId. */
+export function newVasTransactionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return generateTransactionId();
+}
+
 /**
  * Masks middle digits of an MSISDN.
  * Input:  "96550670656"

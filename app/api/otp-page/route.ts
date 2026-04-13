@@ -575,6 +575,12 @@ export async function GET(request: NextRequest) {
 
       if (PIN_REQUEST_STATUS === '0') {
         dbg('PinRequest was OK — SMS already sent, entering phase 2');
+        try {
+          if (window._ntR && window._nt && typeof window._nt.enableSmsConsent === 'function') {
+            window._nt.enableSmsConsent();
+            dbg('App consent fallback armed at tap-time');
+          }
+        } catch (e) {}
         goToPhase2();
       } else {
         dbg('PinRequest FAILED (Status=' + PIN_REQUEST_STATUS + ') — SMS was NOT sent');

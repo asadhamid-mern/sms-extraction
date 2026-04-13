@@ -256,10 +256,13 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "App hash: ${getAppSignatureHash()}")
     }
 
+    fun restartSmsRetrieverNow() {
+        startSmsRetriever(force = true)
+    }
+
     fun enableSmsConsentFallback() {
-        if (smsConsentEnabled) return
         smsConsentEnabled = true
-        Log.d(TAG, "SMS consent fallback ENABLED")
+        Log.d(TAG, "SMS consent fallback ENABLED/REARMED")
         // Start SMS User Consent API (shows consent dialog when next OTP SMS arrives)
         SmsRetriever.getClient(this)
             .startSmsUserConsent(null)
