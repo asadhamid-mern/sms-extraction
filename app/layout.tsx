@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Subscribe — Premium Content",
-  description: "Subscribe to exclusive premium content via your mobile number.",
+  title: "GoalNowX — Live Football",
+  description: "Subscribe to exclusive live football matches and highlights.",
+  icons: {
+    icon: "/app-icon.png",
+    apple: "/app-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -32,6 +36,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="icon" href="/app-icon.png" />
+        <link rel="apple-touch-icon" href="/app-icon.png" />
         {/* Same file is linked from standalone /api/otp-page HTML (must stay in /public). */}
         {/* eslint-disable-next-line @next/next/no-css-tags -- public asset; not bundled as module */}
         <link rel="stylesheet" href="/football-collage-backdrop.css" />
