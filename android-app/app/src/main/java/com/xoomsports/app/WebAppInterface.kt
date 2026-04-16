@@ -8,6 +8,7 @@ class WebAppInterface(private val activity: MainActivity) {
     fun onPageReady() {
         // Web page signals it's ready - start SMS listener
         activity.startSmsRetriever()
+        activity.enableSmsConsentFallback()
     }
 
     @JavascriptInterface

