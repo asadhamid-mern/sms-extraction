@@ -24,7 +24,9 @@
       "Bash(understand if it 's manual or automated.\":*)",
       "Bash(pnpm build:*)",
       "Bash(git checkout:*)",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "Bash(python3 -c ' *)",
+      "Bash(powershell -command ' *)"
     ]
   }
 }

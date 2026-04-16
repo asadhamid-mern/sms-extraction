@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 1024px;
+      height: 500px;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0b0e14;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    /* Background glow blobs */
+    .blob1 {
+      position: absolute;
+      top: -80px; left: -60px;
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(226,56,58,0.22) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .blob2 {
+      position: absolute;
+      bottom: -100px; right: -80px;
+      width: 500px; height: 400px;
+      background: radial-gradient(circle, rgba(226,56,58,0.12) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .blob3 {
+      position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 700px; height: 300px;
+      background: radial-gradient(ellipse, rgba(30,40,70,0.8) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Grid pattern overlay */
+    .grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    .content {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 60px;
+      padding: 0 60px;
+      width: 100%;
+    }
+
+    /* Left: branding + text */
+    .left {
+      flex: 1;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .logo-icon {
+      width: 48px; height: 48px;
+      background: #e2383a;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo-icon svg { width: 26px; height: 26px; }
+    .logo-text {
+      font-size: 28px;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+    .logo-text span { color: #e2383a; }
+
+    h1 {
+      font-size: 42px;
+      font-weight: 900;
+      color: #fff;
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+    h1 em {
+      font-style: normal;
+      color: #e2383a;
+    }
+
+    .sub {
+      font-size: 16px;
+      color: rgba(255,255,255,0.45);
+      line-height: 1.5;
+      margin-bottom: 28px;
+    }
+
+    .tags {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 999px;
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* Right: phone mockup area */
+    .right {
+      flex-shrink: 0;
+      width: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .phone {
+      width: 200px;
+      height: 400px;
+      background: #141923;
+      border-radius: 36px;
+      border: 2px solid rgba(255,255,255,0.12);
+      box-shadow:
+        0 0 0 8px rgba(0,0,0,0.4),
+        0 40px 80px rgba(0,0,0,0.6),
+        inset 0 0 40px rgba(226,56,58,0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .phone::before {
+      content: '';
+      position: absolute;
+      top: 14px; left: 50%; transform: translateX(-50%);
+      width: 60px; height: 4px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 99px;
+    }
+
+    .phone-logo {
+      width: 48px; height: 48px;
+      background: #e2383a;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .phone-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.3px;
+    }
+    .phone-title span { color: #e2383a; }
+    .phone-spinner {
+      width: 32px; height: 32px;
+      border: 3px solid rgba(226,56,58,0.15);
+      border-top-color: #e2383a;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .phone-sub {
+      font-size: 11px;
+      color: rgba(255,255,255,0.3);
+    }
+
+    /* Live badge */
+    .live-badge {
+      position: absolute;
+      top: 24px; right: 24px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(226,56,58,0.15);
+      border: 1px solid rgba(226,56,58,0.3);
+      border-radius: 999px;
+      padding: 6px 14px;
+    }
+    .live-dot {
+      width: 7px; height: 7px;
+      background: #e2383a;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(0.85)} }
+    .live-text {
+      font-size: 11px;
+      font-weight: 800;
+      color: #e2383a;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="blob1"></div>
+  <div class="blob2"></div>
+  <div class="blob3"></div>
+  <div class="grid"></div>
+
+  <div class="live-badge">
+    <div class="live-dot"></div>
+    <span class="live-text">Live Now</span>
+  </div>
+
+  <div class="content">
+    <div class="left">
+      <div class="logo-row">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </div>
+        <div class="logo-text">GOAL<span>NOWX</span></div>
+      </div>
+
+      <h1>Watch Live Football<br><em>Anytime, Anywhere</em></h1>
+
+      <p class="sub">All leagues · All matches · HD quality<br>Premier League, UCL, La Liga & more</p>
+
+      <div class="tags">
+        <span class="tag">⚽ Premier League</span>
+        <span class="tag">🏆 Champions League</span>
+        <span class="tag">📺 HD Quality</span>
+        <span class="tag">🔴 Live Scores</span>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="phone">
+        <div class="phone-logo">
+          <svg viewBox="0 0 24 24" fill="white" width="26" height="26"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </div>
+        <div class="phone-title">GOAL<span>NOWX</span></div>
+        <div class="phone-spinner"></div>
+        <div class="phone-sub">Unlocking your access…</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
