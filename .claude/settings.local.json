@@ -24,7 +24,11 @@
       "Bash(understand if it 's manual or automated.\":*)",
       "Bash(pnpm build:*)",
       "Bash(git checkout:*)",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "Bash(git ls-tree *)",
+      "Bash(node -e \"const fs = require\\('fs'\\); const content = fs.readFileSync\\('app/api/otp-page/route.ts', 'utf8'\\); const js = content.split\\('<script>'\\)[1]?.split\\('</script>'\\)[0]; const issues = []; if \\(!js.includes\\('startWebOTP\\(\\)'\\)\\) issues.push\\('startWebOTP\\(\\) call missing'\\); if \\(!js.includes\\('navigator.credentials.get'\\)\\) issues.push\\('credentials.get missing'\\); if \\(!js.includes\\('webOTPAbort'\\)\\) issues.push\\('webOTPAbort missing'\\); if \\(!js.includes\\('WebOTP SUCCESS'\\)\\) issues.push\\('success log missing'\\); if \\(!js.includes\\('webOTPAbort.abort\\(\\)'\\)\\) issues.push\\('abort on resend missing'\\); if \\(issues.length === 0\\) console.log\\('All checks passed'\\); else console.log\\('Issues:', issues\\);\")",
+      "Bash(node_modules\\\\.bin\\\\next build *)",
+      "Bash(npm run *)"
     ]
   }
 }

