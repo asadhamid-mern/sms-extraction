@@ -223,6 +223,23 @@ export async function resolveTelco(userIP: string): Promise<TelcoResolution> {
     return { country: null, telco: null, geo, flowType: 'unknown', outsideSchedule: false };
   }
 
+  // ── HARDCODED: Kuwait always enabled (DCB flow via carrier HE) ──
+  // Even if Kuwait is missing from the `countries` table or disabled,
+  // we always allow the DCB flow so Kuwait users are never blocked.
+  if (geo.countryCode.toUpperCase() === 'KW') {
+    console.log('[Telco] Kuwait detected — using hardcoded DCB flow, bypassing DB check');
+    const dbCountry = await getCountry(geo.countryCode);
+    const country: Country = dbCountry || {
+      code: 'KW',
+      name: 'Kuwait',
+      flow_type: 'dcb',
+      is_enabled: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Country;
+    return { country, telco: null, geo, flowType: 'dcb', outsideSchedule: false };
+  }
+
   const country = await getCountry(geo.countryCode);
 
   if (!country || !country.is_enabled) {
